@@ -188,11 +188,17 @@ def stream_file(filepath = None):
     logger.debug('stream_file got %s' % req_file)
 
     chunk_size = 2048
-    command = ['cat', movie_dir+'/'+req_file]
+    # XXX this command only works for video, not audio
+    command = ['ffmpeg', '-i', movie_dir+'/'+req_file,
+            '-f', 'mp4',
+            '-c', 'copy', '-c:a', 'aac', '-ac', '2',
+            '-movflags', '+frag_keyframe+separate_moof+omit_tfhd_offset+empty_moov',
+            'pipe:1']
+    #command = ['cat', movie_dir+'/'+req_file]
     mtype = mimetype_from_filename(req_file)
     logger.debug('RUN %s' % command)
 
-    process = Popen(command, stdout=PIPE, bufsize=-1)
+    process = Popen(command, stdout=PIPE, stderr=DEVNULL, stdin=DEVNULL, bufsize=-1)
     read_chunk = partial(os.read, process.stdout.fileno(), chunk_size)
     try:
         return Response(iter(read_chunk, b""), mimetype=mtype)
