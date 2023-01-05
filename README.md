@@ -54,6 +54,14 @@ and possibly transcodes in the process.
 http://localhost:5000/api/v1/stream?file=test1.mp3
 ```
 
+# Troubleshooting
+
+* Try `avahi-browse _googlecast._tcp`
+* Try downgrading protobuf package to 3.20.x or lower.
+pip install protobuf==3.20.1
+or Set PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python (but this will use pure-Python parsing and will be much slower).
+* Try downgrading zeroconf package to 0.24.3 or something?
+
 # How it works
 
 * Listen for Chromecasts
@@ -67,13 +75,12 @@ http://localhost:5000/api/v1/stream?file=test1.mp3
 * Currently leaves behind the process doing the streaming
 * Remember position so user can restart movie from where they stopped
 * Solve both by having a monitor thread which sees what's playing and at what position,
-and when same media played again it can send a seek.
+and when same media played again it can send a seek. Maybe implement CastListener subclass.
 
 # See also
 
-* mkchromecast - should do exactly the same as this code, and more, but I couldn't
-get it working, and it's been abandoned by the author. It seems to *require* either
-PulseAudio or ALSA so wouldn't work on my headless server.
-* catt - no GUI and no way to play local files?
-* casttube - similar
-* pychromecast - what this server is built on
+* https://github.com/muammar/mkchromecast - should do exactly the same as this code, and more, but I couldn't get it working, and it's been abandoned by the author. It seems to *require* either PulseAudio or ALSA so wouldn't work on my headless server.
+* https://github.com/skorokithakis/catt - no GUI and no way to play local files?
+* https://github.com/ur1katz/casttube - similar
+* https://github.com/yt-dlp/yt-dlp - used by the above
+* https://github.com/home-assistant-libs/pychromecast - what this server is built on
