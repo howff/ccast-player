@@ -130,9 +130,9 @@ def home():
     html = '<html><head><title>CCast-Player</title></head><body>'
     html += '<p>Using Chromecast: %s' % desired_chromecast_name
     html += '<p>'
-    html += '<a href="/api/v1/rescan">| Rescan'
-    html += '<a href="/api/v1/reboot">| Reboot'
-    html += '<a href="/api/v1/shutdown">| Shutdown'
+    html += '<a href="/api/v1/rescan">Rescan'
+    html += '<a href="/api/v1/reboot"> | Reboot'
+    html += '<a href="/api/v1/shutdown"> | Shutdown'
     html += '<p>'
     for file in files:
         file = file.replace(dir, '')
