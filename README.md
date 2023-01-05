@@ -2,7 +2,7 @@
 
 A Media Player for the Chromecast. Implemented in Python. Runs on Linux and maybe MacOS/Windows (not tested).
 It allows you to play audio and video files, which are available on your local computer, onto a Google Chromecast.
-The intended use case is where you have a collection of videos and want to be able to use a web browser on a different computer in your home network to cast them to you TV.
+The intended use case is where you have a collection of videos and want to be able to use a web browser on a different computer in your home network to cast them to your TV.
 
 * Provides a web server which lists all your movies
 * Casts a movie file to your Chromecast when you click on a movie title
