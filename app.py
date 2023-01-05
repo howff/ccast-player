@@ -1,19 +1,21 @@
+#!/usr/bin/env python3
 # A Flask web application media server which transcodes for Chromecast
 #
 # Run with:
 #  python -m flask run --host 0.0.0.0
 
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+import argparse
+from flask import Flask, Response, jsonify, redirect, render_template, request, url_for
 import glob
 import logging
 import os
 import sys
 from natsort import natsorted
+import socket
 import time
 import pychromecast
 from functools import partial
-from subprocess import Popen, PIPE
-from flask import Flask, Response
+from subprocess import Popen, PIPE, DEVNULL
 
 
 from flask.helpers import make_response
@@ -42,6 +44,22 @@ logging_handlers = [logging_fd, logging_stdout]
 logger = logging.getLogger(__name__)
 logger = app.logger
 logger.setLevel(logging.DEBUG)
+
+# ---------------------------------------------------------------------
+# Get the local host IP address so we can construct a URL to send to Chromecast
+
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(0)
+    try:
+        # doesn't even have to be reachable
+        s.connect(('10.254.254.254', 1))
+        IP = s.getsockname()[0]
+    except Exception:
+        IP = '127.0.0.1'
+    finally:
+        s.close()
+    return IP
 
 # ---------------------------------------------------------------------
 # Find the Chromecast
@@ -243,5 +261,21 @@ def play_file(filepath = None):
 # ---------------------------------------------------------------------
 # Main program, instead of python -m flask run --host etc
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=port)
 
+    parser = argparse.ArgumentParser(description='CCast-Player')
+    parser.add_argument('-v', '--verbose', action="store_true", help='verbose')
+    parser.add_argument('-d', '--debug', action="store_true", help='debug')
+    parser.add_argument('--host', dest='host', action="store", help='network interfaces to listen on', default='0.0.0.0')
+    parser.add_argument('--port', dest='port', action="store", help='network port to listen on', default='5000')
+    parser.add_argument('--chromecast', dest='chromecast', action="store", help='name of Chromecast to cast to', default='TV')
+    parser.add_argument('--media', dest='media', action="store", help='location of media files', default='/mnt/cifs/shared/video/movies')
+    parser.add_argument('--sat_id', dest='sat_id', action="store", help="Satellite ID, default=%(default)s", default="8888")
+    args = parser.parse_args()
+
+    desired_chromecast_name = args.chromecast
+    port = args.port
+    movie_dir = args.media
+    ip = get_local_ip()
+    stream_url = f'http://{ip}:{port}/api/v1/stream?file='
+
+    app.run(host=args.host, port=args.port)
