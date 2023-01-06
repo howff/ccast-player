@@ -3,22 +3,28 @@
 #
 # Run with:
 #  python -m flask run --host 0.0.0.0
+# or just:
+#  ./app.py --help
 
 import argparse
-from flask import Flask, Response, jsonify, redirect, render_template, request, url_for
+import datetime # used when eval(MediaStatus)
 import glob
+import json
 import logging
 import os
+import re
 import sys
 from natsort import natsorted
+from pydal import DAL, Field
+import signal
 import socket
 import time
+import threading
 import pychromecast
 from functools import partial
 from subprocess import Popen, PIPE, DEVNULL
-
-
-from flask.helpers import make_response
+from flask import Flask, Response, jsonify, redirect, render_template, request, url_for
+#from flask.helpers import make_response
 
 
 app = Flask(__name__)
@@ -27,26 +33,31 @@ desired_chromecast_name = 'TV'
 port = 5000
 movie_dir = '/mnt/cifs/shared/video/movies'
 stream_url = f'http://192.168.1.30:{port}/api/v1/stream?file='
+audio_file_ext = ['.mp3', '.opus', '.ogg', '.flac', '.wav']
+video_file_ext = ['avi', 'mov', 'mkv', 'mp4', 'flv', 'ts']
+cast = None
+global_file_playing = None
+global_pid = None
+global_process = None
+global_duration = -1
+global_seekpos = 0
 
 
 # ---------------------------------------------------------------------
-# If running inside the docker comtainer then use /antenna
-# otherwise use /opt/DSSingest
-# or /ingest/<computername>
-# XXX change logging to write to files in logs_dir
-#if 'FLASK_APP' in os.environ:
+# Configure logging
+# Uncomment the basicConfig lines to see output from Flask/pychromecast.
+
 logging_fd = logging.FileHandler(filename='ccast-player.log')
 logging_stdout = logging.StreamHandler(sys.stdout)
 logging_handlers = [logging_fd, logging_stdout]
 #logging.basicConfig(level=logging.DEBUG, handlers=logging_handlers,
 #    format='[%(asctime)s] {%(filename)s:%(lineno)d} %(levelname)s - %(message)s')
-#logging.info(f'Starting web server {__name__} with API version v{api_version}')
-logger = logging.getLogger(__name__)
 logger = app.logger
-logger.setLevel(logging.DEBUG)
+
 
 # ---------------------------------------------------------------------
 # Get the local host IP address so we can construct a URL to send to Chromecast
+# Returns a string such as "192.168.1.30", or "127.0.0.1" if it cannot be found.
 
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -61,78 +72,154 @@ def get_local_ip():
         s.close()
     return IP
 
+
+# ---------------------------------------------------------------------
+# Maintain a database of the current seek position (duration) for files
+# which have been partially watched.
+
+class SeekDB:
+    # Not used yet!
+    def __init__(self):
+        self.db = DAL('sqlite://app.sqlite', folder='.')
+        self.db.define_table('SeekPos', Field('file', unique=True), Field('seek'))
+    def get_seekpos(self, filename):
+        for row in db(db.SeekPos.file == filename).select(db.SeekPos.seek):
+            logger.debug('Got seek position %s for %s' % (row, filename))
+            return row['seek']
+        return None
+    def update_seekpos(self, filename, seconds):
+        db.SeekPos.update_or_insert(db.SeekPos.file == filename, file = filename, seek = seekpos)
+        db.commit()
+        logger.debug('Set seek position %s for %s' % (seekpos, filename))
+    def dump(self):
+        for row in db().select(db.SeekPos.ALL):
+            print(row)
+
+
+def db_init():
+    """ Open and configure the database. Call this to get a db handle
+    before any reading or writing. Internal use only """
+
+    db = DAL('sqlite://app.sqlite', folder='.')
+    db.define_table('SeekPos', Field('file', unique=True), Field('seek'))
+    return db
+
+
+def db_get_seekpos(filename):
+    """ Return the seek position for the given filename, or None if not found. """
+
+    db = db_init()
+    for row in db(db.SeekPos.file == filename).select(db.SeekPos.seek):
+        logger.debug('Got seek position %s for %s' % (row, filename))
+        return row['seek']
+    return None
+
+
+def db_update_seekpos(filename, seekpos):
+    """ Add a record to the database (or update an existing record)
+        with a value of seekpos for the given filename. """
+
+    db = db_init()
+    db.SeekPos.update_or_insert(db.SeekPos.file == filename, file = filename, seek = seekpos)
+    db.commit()
+    logger.debug('Set seek position %s for %s' % (seekpos, filename))
+
+
+def db_dump():
+    """ Print all rows in the database """
+
+    db = db_init()
+    for row in db().select(db.SeekPos.ALL):
+        print(row)
+
+
+# ---------------------------------------------------------------------
+# This function never exits, it periodically queries the Chromecast status
+# and updates global variables with the current seek position.
+
+def monitor_chromecast(cast):
+    """ Periodically get the status of the Chromecast
+    if streaming our file then remember the current seek position (duration)
+    otherwise assume streaming stopped so kill the ffmpeg process
+    then write the final duration to the database.
+    e.g. [2023-01-05 16:40:22,036] DEBUG in app: <MediaStatus {'metadata_type': None, 'title': None, 'series_title': None, 'season': None, 'episode': None, 'artist': None, 'album_name': None, 'album_artist': None, 'track': None, 'subtitle_tracks': [], 'images': [], 'supports_pause': True, 'supports_seek': True, 'supports_stream_volume': True, 'supports_stream_mute': True, 'supports_skip_forward': False, 'supports_skip_backward': False, 'current_time': 5.631622, 'content_id': 'http://192.168.1.30:5000/api/v1/stream?file=/Alpinist/The.Alpinist.2021.1080p.WEB-DL.DD5.1.H.264-TEPES.mkv', 'content_type': 'video/mp4', 'duration': 10.219, 'stream_type': 'BUFFERED', 'idle_reason': None, 'media_session_id': 1, 'playback_rate': 1, 'player_state': 'BUFFERING', 'supported_media_commands': 274447, 'volume_level': 1, 'volume_muted': False, 'media_custom_data': {}, 'media_metadata': {}, 'current_subtitle_tracks': [], 'last_updated': datetime.datetime(2023, 1, 5, 16, 40, 21, 781787)}>
+    """
+
+    global global_duration
+    global global_file_playing
+
+    logger.debug('Monitor thread running')
+    while True:
+        if cast.media_controller.status:
+            status = str(cast.media_controller.status) # no method to get properties
+            status_dict = eval(status[13:-1])          # strip off the class name
+            content_id = status_dict.get('content_id', '')
+            if not content_id:
+                content_id = ''
+            duration = status_dict.get('duration', -1)
+            if not duration:
+                duration = -1
+            logger.debug('Media Status: at %f playing %s' % (duration, content_id))
+            if global_file_playing:
+                if global_file_playing in content_id:
+                    #logger.debug('content_id contains filename (%s)' % (global_file_playing))
+                    if duration > 0:
+                        global_duration = duration + global_seekpos # duration is an offset from the where we started which might have been seeked
+                else:
+                    #logger.debug('content_id NOT contains filename %s' % (global_file_playing))
+                    logger.debug('Killing PID %s' % global_pid)
+                    os.kill(global_pid, signal.SIGKILL) # XXX hacky. only KILL works (prob because blocked in I/O) INT and TERM don't kill
+                    global_process.wait()
+                    logger.debug('Updating database with duration %f for %s' % (global_duration, global_file_playing))
+                    db_update_seekpos(global_file_playing, global_duration)
+                    global_file_playing = None
+            else:
+                logger.debug('No global_file_playing')
+        time.sleep(2)
+
+
 # ---------------------------------------------------------------------
 # Find the Chromecast
-chromecasts = None
-while not chromecasts:
-    logger.debug('Searching for %s...' % desired_chromecast_name)
-    chromecasts, browser = pychromecast.get_listed_chromecasts(friendly_names=[desired_chromecast_name])
-logger.debug('Chromecasts:')
-logger.debug(chromecasts)
-# e.g. [Chromecast('unknown', port=8009, cast_info=CastInfo(services={ServiceInfo(type='mdns', data='Chromecast-282646f9f19ee5392e768c729fcb48a4._googlecast._tcp.local.')}, uuid=UUID('282646f9-f19e-e539-2e76-8c729fcb48a4'), model_name='Chromecast', friendly_name='TV', host='192.168.1.23', port=8009, cast_type='cast', manufacturer='Google Inc.'))]
 
-# Select the first (only if you've given an explicit name)
-cast = chromecasts[0]
+def find_chromecast(desired_chromecast_name):
+    """ Find the named Chromecast and return a Cast object """
+
+    chromecasts = None
+    while not chromecasts:
+        logger.debug('Searching for "%s" ...' % desired_chromecast_name)
+        chromecasts, browser = pychromecast.get_listed_chromecasts(friendly_names=[desired_chromecast_name])
+    logger.debug('Discovered Chromecasts: %s' % chromecasts)
+    # e.g. [Chromecast('unknown', port=8009, cast_info=CastInfo(services={ServiceInfo(type='mdns', data='Chromecast-282646f9f19ee5392e768c729fcb48a4._googlecast._tcp.local.')}, uuid=UUID('282646f9-f19e-e539-2e76-8c729fcb48a4'), model_name='Chromecast', friendly_name='TV', host='192.168.1.23', port=8009, cast_type='cast', manufacturer='Google Inc.'))]
+
+    # Select the first (only if you've given an explicit name)
+    cast = chromecasts[0]
+    return cast
+
+
+def start_chromecast_monitor(cast):
+    """ Start a background thread to monitor the Chromecast
+    and update some global variables with the current seek position """
+
+    monitor_thread = threading.Thread(target = monitor_chromecast, args = (cast,))
+    monitor_thread.start()
+
 
 # ---------------------------------------------------------------------
+
 def mimetype_from_filename(filename):
-    for ext in ['.mp3', '.ogg', '.flac', '.wav']:
-        if ext in filename:
-            return 'audio/mp3'
-    for ext in ['.mp4', '.mkv', '.mov', '.avi']:
-        if ext in filename:
-            return 'video/mp4'
-    return 'video/mp4' # XXX ???
+    """ Return a mimetype suitable for the given filename extension """
+
+    ext_regex = '.*\.(' + '|'.join(audio_file_ext) + ')$'
+    if re.match(ext_regex, filename):
+        return 'audio/mp3'
+    ext_regex = '.*\.(' + '|'.join(video_file_ext) + ')$'
+    if re.match(ext_regex, filename):
+        return 'video/mp4'
+    return 'video/mp4' # XXX default to video ???
 
 
 # ---------------------------------------------------------------------
-""" An object to form a Flask response being a dict with "success":True.
-Constructed with an arbitrary object that will be converted to JSON.
-Use the web() method to get the response.
-"""
-class OKResponse:
-    """ Handy class to return a suitable dict
-    """
-    def __init__(self, rc):
-        self._rc = rc
-    def web(self):
-        resp = { "success": True }
-        if isinstance(self._rc, dict):
-            resp.update(self._rc)
-        else:
-            resp.update({'value': self._rc})
-        logger.debug('returning OK with %s' % resp)
-        return resp
-
-
-# ---------------------------------------------------------------------
-""" An object to form a Flask response being a dict with "success":False.
-Constructed with an error message.
-Use the web() method to get the response.
-"""
-class ErrorResponse:
-    """ Handy class to return a suitable dict for reporting an error.
-    Use it like this:
-    return ErrorResponse('my error message').web()
-    to return { "success": False, "error_message": "my error message" }
-    """
-    def __init__(self, msg):
-        logger.error(msg)
-        self._msg = msg
-    def web(self):
-        # Show detailed error if not running inside docker 
-        if not 'FLASK_APP' in os.environ:
-            if sys.exc_info()[1]:
-                logger.error(sys.exc_info()[1]) # error message
-                import traceback
-                logger.error(traceback.format_exc()) # traceback
-                if sys.__stdin__.isatty():
-                    raise
-        return { "success": False, "error_message": self._msg }
-
-
-# ---------------------------------------------------------------------
-# Home page returns nothing
+# Home page returns list of files available to play
 
 def urlencode(filename):
     return filename.replace(' ', '+')
@@ -140,21 +227,27 @@ def urlencode(filename):
 @app.route("/")
 def home():
 
+    # Collect a list of movie files underneath the media directory
     dir = movie_dir
-    mp4 = glob.glob(f'{dir}/*/*.mp4')
-    mkv = glob.glob(f'{dir}/*/*.mkv')
-    files = natsorted(mp4+mkv)
+    files = []
+    ext_regex = '.*\.(' + '|'.join(video_file_ext) + ')$'
+    for root, dirslist, fileslist in os.walk(dir, followlinks = True):
+        files += [os.path.join(root, f) for f in fileslist if re.match(ext_regex, f)]
+    files = natsorted(files)
 
-    html = '<html><head><title>CCast-Player</title></head><body>'
-    html += '<p>Using Chromecast: %s' % desired_chromecast_name
-    html += '<p>'
-    html += '<a href="/api/v1/rescan">Rescan'
-    html += '<a href="/api/v1/reboot"> | Reboot'
-    html += '<a href="/api/v1/shutdown"> | Shutdown'
-    html += '<p>'
+    # Create HTML document listing movie files with option to Restart from beginning
+    html = '<html><head><title>CCast-Player</title></head><body>\n'
+    html += '<p class="cast">Using Chromecast: %s</p>\n' % desired_chromecast_name
+    html += '<p class="menu">'
+    html += '<a class="menuitem" href="/api/v1/status">| Status'
+    html += '<a class="menuitem" href="/api/v1/rescan">| Rescan'
+    html += '<a class="menuitem" href="/api/v1/reboot"> | Reboot'
+    html += '<a class="menuitem" href="/api/v1/shutdown"> | Shutdown</p>\n'
+    html += '<p>\n'
     for file in files:
         file = file.replace(dir, '')
-        html += '<br><a href="/api/v1/play?file=' + urlencode(file) + '">' + file + '\n'
+        html += '<br><a class="file" href="/api/v1/play?file=' + urlencode(file) + '">' + file + '\n'
+        html += '  <a class="resume" href="/api/v1/play?file=' + urlencode(file) + '&resume=0">[Restart]\n'
     html += '</body></html>'
     return Response(html)
 
@@ -177,23 +270,41 @@ def help():
 
 
 # ---------------------------------------------------------------------
+@app.route(f"/api/v{api_version}/status")
+def status():
+    """ Return Chromecast status """
+    if cast.media_controller.status:
+        status = str(cast.media_controller.status) # no method to get properties
+        status_dict = eval(status[13:-1])          # strip off the class name
+        Response(str(status_dict))
+    return Response('Chromecast not found')
+
+
+# ---------------------------------------------------------------------
 @app.route(f"/api/v{api_version}/rescan")
 def rescan():
+    """ Look for the Chromecast again """
+
     logger.debug('rescan')
-    return Response('False')
+    cast = find_chromecast(desired_chromecast_name)
+    start_chromecast_monitor(cast)
+    return Response('Please wait a minute for the Chromecast Discovery to complete')
+
 
 # ---------------------------------------------------------------------
 @app.route(f"/api/v{api_version}/reboot")
 def reboot():
     logger.debug('reboot')
-    return Response('False')
+    return Response('Not yet implemented')
+
 
 # ---------------------------------------------------------------------
 @app.route(f"/api/v{api_version}/shutdown")
 def shutdown():
     logger.debug('shutdown')
     pychromecast.discovery.stop_discovery(browser)
-    return Response('False')
+    return Response('Not yet implemented')
+
 
 # ---------------------------------------------------------------------
 # /stream?file=path/file.mp4
@@ -203,11 +314,26 @@ def shutdown():
 def stream_file(filepath = None):
 
     req_file = request.args.get('file', '<None>')
-    logger.debug('stream_file got %s' % req_file)
+    req_resume = request.args.get('resume', None)
+
+    logger.debug('stream_file got file %s resume %s' % (req_file, req_resume))
+    global global_file_playing, global_pid, global_process, global_seekpos
+
+    # Get seek position from the database if possible but override with param passed in URL
+    # resume=0 starts from the beginning.
+    seek_seconds = 0
+    seekpos = db_get_seekpos(req_file)
+    if req_resume:
+        seekpos = float(req_resume)
+    if seekpos:
+        global_seekpos = float(seekpos) # need to keep global so 'duration' can be added to it
+        seek_seconds = global_seekpos
 
     chunk_size = 2048
     # XXX this command only works for video, not audio
-    command = ['ffmpeg', '-i', movie_dir+'/'+req_file,
+    command = ['ffmpeg',
+            '-ss', str(seek_seconds),
+            '-i', movie_dir+'/'+req_file,
             '-f', 'mp4',
             '-c', 'copy', '-c:a', 'aac', '-ac', '2',
             '-movflags', '+frag_keyframe+separate_moof+omit_tfhd_offset+empty_moov',
@@ -216,8 +342,10 @@ def stream_file(filepath = None):
     mtype = mimetype_from_filename(req_file)
     logger.debug('RUN %s' % command)
 
-    process = Popen(command, stdout=PIPE, stderr=DEVNULL, stdin=DEVNULL, bufsize=-1)
-    read_chunk = partial(os.read, process.stdout.fileno(), chunk_size)
+    global_process = Popen(command, stdout=PIPE, stderr=DEVNULL, stdin=DEVNULL, bufsize=-1)
+    global_file_playing = req_file
+    global_pid = global_process.pid
+    read_chunk = partial(os.read, global_process.stdout.fileno(), chunk_size)
     try:
         return Response(iter(read_chunk, b""), mimetype=mtype)
     except:
@@ -254,7 +382,7 @@ def play_file(filepath = None):
     logger.debug(mc.status)
     # e.g. <MediaStatus {'metadata_type': None, 'title': None, 'series_title': None, 'season': None, 'episode': None, 'artist': None, 'album_name': None, 'album_artist': None, 'track': None, 'subtitle_tracks': {}, 'images': [], 'supports_pause': True, 'supports_seek': True, 'supports_stream_volume': True, 'supports_stream_mute': True, 'supports_skip_forward': False, 'supports_skip_backward': False, 'current_time': 0, 'content_id': 'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', 'content_type': 'video/mp4', 'duration': None, 'stream_type': 'BUFFERED', 'idle_reason': None, 'media_session_id': 1, 'playback_rate': 1, 'player_state': 'IDLE', 'supported_media_commands': 274447, 'volume_level': 1, 'volume_muted': False, 'media_custom_data': {}, 'media_metadata': {}, 'current_subtitle_tracks': [], 'last_updated': datetime.datetime(2023, 1, 4, 14, 55, 51, 60789)}>
 
-    return OKResponse(f'play file {req_file}').web()
+    return Response(f'play file {req_file}')
 
 
 
@@ -265,17 +393,41 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='CCast-Player')
     parser.add_argument('-v', '--verbose', action="store_true", help='verbose')
     parser.add_argument('-d', '--debug', action="store_true", help='debug')
-    parser.add_argument('--host', dest='host', action="store", help='network interfaces to listen on', default='0.0.0.0')
-    parser.add_argument('--port', dest='port', action="store", help='network port to listen on', default='5000')
-    parser.add_argument('--chromecast', dest='chromecast', action="store", help='name of Chromecast to cast to', default='TV')
-    parser.add_argument('--media', dest='media', action="store", help='location of media files', default='/mnt/cifs/shared/video/movies')
-    parser.add_argument('--sat_id', dest='sat_id', action="store", help="Satellite ID, default=%(default)s", default="8888")
+    parser.add_argument('--host', dest='host', action="store", help='network interfaces to listen on (default %(default)s)', default='0.0.0.0')
+    parser.add_argument('--port', dest='port', action="store", help='network port to listen on (default %(default)s)', default='5000')
+    parser.add_argument('--chromecast', dest='chromecast', action="store", help='name of Chromecast to cast to (default %(default)s)', default='TV')
+    parser.add_argument('--media', dest='media', action="store", help='location of media files (default %(default)s)', default='/mnt/cifs/shared/video/movies')
+    parser.add_argument('--media_dump', dest='mediadump', action="store_true", help="display the list of files")
+    parser.add_argument('--db_dump', dest='dbdump', action="store_true", help="display the database")
+    parser.add_argument('--db_set', dest='dbset', action="store", help="set seek position (in seconds) filename=seconds (e.g. file.mp4=60)")
     args = parser.parse_args()
 
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
+
+    if args.dbset:
+        equ = args.dbset.rindex('=')
+        filename = args.dbset[:equ]
+        seconds  = args.dbset[equ+1:]
+        db_update_seekpos(filename, seconds)
+
+    if args.dbdump:
+        db_dump()
+        sys.exit(0)
+
+    if args.mediadump:
+        print(str(home().data).replace('\\n','\n'))
+        sys.exit(0)
+
     desired_chromecast_name = args.chromecast
-    port = args.port
+    port = int(args.port)
     movie_dir = args.media
     ip = get_local_ip()
-    stream_url = f'http://{ip}:{port}/api/v1/stream?file='
+    stream_url = f'http://{ip}:{port}/api/v1/stream?file=' # XXX why not just use a relative URL?
 
+    logger.info('Searching for Chromecast "%s"' % desired_chromecast_name)
+    cast = find_chromecast(desired_chromecast_name)
+    start_chromecast_monitor(cast)
+
+    logger.info('Starting web server')
     app.run(host=args.host, port=args.port)

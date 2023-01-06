@@ -6,6 +6,7 @@ The intended use case is where you have a collection of videos and want to be ab
 
 * Provides a web server which lists all your movies
 * Casts a movie file to your Chromecast when you click on a movie title
+* Restarts a movie where you left off, if you stop watching before the end
 
 # Installation
 
@@ -20,19 +21,40 @@ pip install -r requirements.txt
 
 # Configuration
 
-Edit the script to change the path to your movies.
+The seek position database is stored in the current directory (edit the script to change this).
 
 # Usage
 
 Start server
 ```
-python -m flask run --host 0.0.0.0 &
+python -m flask run
 OR
-./app.py [--host 0.0.0.0] [--port 5000] [--chromecast "Living Room"] [--media /path/to/files]
+./app.py
 ```
 
 It will take a few seconds to discover the Chromecasts on your network, sometimes up to a minute.
 Point your browser at http://localhost:5000/ select a movie to watch it.
+
+Full set of options:
+```
+usage: app.py [-h] [-v] [-d] [--host HOST] [--port PORT]
+   [--chromecast CHROMECAST] [--media MEDIA]
+   [--media_dump] [--db_dump] [--db_set DBSET]
+
+  -h, --help            show this help message and exit
+  -d, --debug           debug
+  --host HOST           network interfaces to listen on (default 0.0.0.0)
+  --port PORT           network port to listen on (default 5000)
+  --chromecast NAME     name of Chromecast to cast to (default TV)
+  --media MEDIA         location of media files (default /mnt/cifs/shared/video/movies)
+  --media_dump          display the list of files (as HTML) then exit
+  --db_dump             display the database then exit
+  --db_set DBSET        set seek position (in seconds) filename=seconds (e.g. file.mp4=60)
+```
+
+You will want to specify at least:
+* --chromecast with the name of your Chromecast (the friendly name not the model name)
+* --media with the path to your directory of movie files (it will search all directories inside there too)
 
 # API
 
@@ -49,14 +71,24 @@ You must URL-encode the filename, i.e. no spaces.
 
 The `play` method will instruct the Chromecast to start playing from a particular URL.
 That URL will be the `stream` method which outputs the movie to the Chromecast,
-and possibly transcodes in the process.
+and transcodes in the process.
 ```
 http://localhost:5000/api/v1/stream?file=test1.mp3
 ```
 
 # Troubleshooting
 
-* Try `avahi-browse _googlecast._tcp`
+* Try `avahi-browse _googlecast._tcp` to see if your Chromecast is responding on the network
+
+* Use `--media_dump` to see which files are being found by the search
+
+* Use `--db_dump` to see the content of the database which holds the seek position
+of each movie watched.  The database is in sqlite3 format so you can see/edit it using
+the `sqlite3` program if installed.
+
+* Use `--db_set` to change the seek position of a movie, for example to change it to
+10 minutes (600 seconds) for file1.mp4 use `--db_set file1.mp4=600`
+
 * Try downgrading protobuf package to 3.20.x or lower.
 pip install protobuf==3.20.1
 or Set PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python (but this will use pure-Python parsing and will be much slower).
@@ -69,13 +101,6 @@ or Set PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python (but this will use pure-Pyt
 * Tell Chromecast to play from a URL
 * Listen for requests for that URL
 * Stream media back to the Chromecast client
-
-# To do
-
-* Currently leaves behind the process doing the streaming
-* Remember position so user can restart movie from where they stopped
-* Solve both by having a monitor thread which sees what's playing and at what position,
-and when same media played again it can send a seek. Maybe implement CastListener subclass.
 
 # See also
 
