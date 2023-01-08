@@ -276,7 +276,7 @@ def status():
     if cast.media_controller.status:
         status = str(cast.media_controller.status) # no method to get properties
         status_dict = eval(status[13:-1])          # strip off the class name
-        Response(str(status_dict))
+        return Response(str(status_dict))
     return Response('Chromecast not found')
 
 
