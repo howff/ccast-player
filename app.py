@@ -392,9 +392,9 @@ def play_file(filepath = None):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='CCast-Player')
-    parser.add_argument('-v', '--verbose', action="store_true", help='verbose')
+    parser.add_argument('-v', '--verbose', action="store_true", help='verbose (logs to screen when running with --service)')
     parser.add_argument('-d', '--debug', action="store_true", help='debug')
-    parser.add_argument('--service', action="store_true", help='run as a daemon service')
+    parser.add_argument('--service', action="store_true", help='run as a daemon service (logs to a file)')
     parser.add_argument('--host', dest='host', action="store", help='network interfaces to listen on (default %(default)s)', default='0.0.0.0')
     parser.add_argument('--port', dest='port', action="store", help='network port to listen on (default %(default)s)', default='5000')
     parser.add_argument('--chromecast', dest='chromecast', action="store", help='name of Chromecast to cast to (default %(default)s)', default='TV')
