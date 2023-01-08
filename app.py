@@ -323,7 +323,7 @@ def stream_file(filepath = None):
     # resume=0 starts from the beginning.
     seek_seconds = 0
     seekpos = db_get_seekpos(req_file)
-    if req_resume:
+    if req_resume is not None:
         seekpos = float(req_resume)
     if seekpos:
         global_seekpos = float(seekpos) # need to keep global so 'duration' can be added to it
