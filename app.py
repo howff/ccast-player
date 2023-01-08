@@ -10,7 +10,7 @@ import argparse
 import datetime # used when eval(MediaStatus)
 import glob
 import json
-import logging
+import logging, logging.handlers
 import os
 import re
 import sys
@@ -48,7 +48,7 @@ global_seekpos = 0
 # Configure logging
 # Uncomment the basicConfig lines to see output from Flask/pychromecast.
 
-logging_fd = logging.FileHandler(filename='ccast-player.log')
+logging_fd = logging.handlers.RotatingFileHandler(filename='ccast-player.log', maxBytes=64*1024*1024, backupCount=9)
 logging_stdout = logging.StreamHandler(sys.stdout)
 logging_handlers = [logging_fd, logging_stdout]
 #logging.basicConfig(level=logging.DEBUG, handlers=logging_handlers,
@@ -394,6 +394,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='CCast-Player')
     parser.add_argument('-v', '--verbose', action="store_true", help='verbose')
     parser.add_argument('-d', '--debug', action="store_true", help='debug')
+    parser.add_argument('--service', action="store_true", help='run as a daemon service')
     parser.add_argument('--host', dest='host', action="store", help='network interfaces to listen on (default %(default)s)', default='0.0.0.0')
     parser.add_argument('--port', dest='port', action="store", help='network port to listen on (default %(default)s)', default='5000')
     parser.add_argument('--chromecast', dest='chromecast', action="store", help='name of Chromecast to cast to (default %(default)s)', default='TV')
@@ -402,6 +403,13 @@ if __name__ == "__main__":
     parser.add_argument('--db_dump', dest='dbdump', action="store_true", help="display the database")
     parser.add_argument('--db_set', dest='dbset', action="store", help="set seek position (in seconds) filename=seconds (e.g. file.mp4=60)")
     args = parser.parse_args()
+
+    if args.service:
+        log_handlers = [logging_fd]
+        if args.verbose:
+            handlers += logging_stdout
+        logging.basicConfig(handlers=log_handlers,
+            format='[%(asctime)s] {%(filename)s:%(lineno)d} %(levelname)s - %(message)s')
 
     if args.debug:
         logger.setLevel(logging.DEBUG)
