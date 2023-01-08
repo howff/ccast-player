@@ -16,6 +16,7 @@ import re
 import sys
 from natsort import natsorted
 from pydal import DAL, Field
+import pprint
 import signal
 import socket
 import time
@@ -276,7 +277,7 @@ def status():
     if cast.media_controller.status:
         status = str(cast.media_controller.status) # no method to get properties
         status_dict = eval(status[13:-1])          # strip off the class name
-        return Response(str(status_dict))
+        return Response('<pre>' + pprint.pformat(status_dict, indent=4) + '</pre>')
     return Response('Chromecast not found')
 
 
