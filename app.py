@@ -363,7 +363,8 @@ def stream_file(filepath = None):
 def play_file(filepath = None):
 
     req_file = request.args.get('file', '<None>')
-    logger.debug('play_file got %s' % req_file)
+    req_resume = request.args.get('resume', None)
+    logger.debug('play_file got %s resume %s' % (req_file, req_resume))
 
     # Start worker thread and wait for cast device to be ready
     logger.debug('Waiting for cast device to be ready...')
@@ -373,6 +374,8 @@ def play_file(filepath = None):
     mc = cast.media_controller
     logger.debug('Sending URL...')
     local_file = stream_url + req_file
+    if req_resume is not None:
+        local_file += '&resume=%s' % req_resume
     local_type = mimetype_from_filename(req_file)
     logger.debug('Asking Chromecast to play %s' % local_file)
     mc.play_media(local_file, local_type)
