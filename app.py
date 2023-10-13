@@ -398,7 +398,9 @@ def play_file(filepath = None):
 
 # ---------------------------------------------------------------------
 # Main program, instead of python -m flask run --host etc
-if __name__ == "__main__":
+
+def main():
+    global cast
 
     parser = argparse.ArgumentParser(description='CCast-Player')
     parser.add_argument('-v', '--verbose', action="store_true", help='verbose (logs to screen when running with --service)')
@@ -443,9 +445,21 @@ if __name__ == "__main__":
     ip = get_local_ip()
     stream_url = f'http://{ip}:{port}/api/v1/stream?file=' # XXX why not just use a relative URL?
 
+    #logger.debug('app.root_path = %s' % app.root_path)
+    #logger.debug('app.instance_path = %s' % app.instance_path)
+    logger.debug('chromecast = %s' % desired_chromecast_name)
+    logger.debug('ip = %s' % ip)
+    logger.debug('port = %s' % port)
+    logger.debug('movie_dir = %s' % movie_dir)
+
     logger.info('Searching for Chromecast "%s"' % desired_chromecast_name)
     cast = find_chromecast(desired_chromecast_name)
     start_chromecast_monitor(cast)
 
     logger.info('Starting web server')
     app.run(host=args.host, port=args.port)
+
+
+
+if __name__ == "__main__":
+    main()
