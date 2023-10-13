@@ -463,6 +463,21 @@ def main():
     app.run(host=args.host, port=args.port)
 
 
+# Gunicorn entry point generator -- calls main() with command line arguments
+# generated from gunicorn app(foo=bar)
+def appNOTUSED(*args, **kwargs):
+    # Gunicorn CLI args are useless.
+    # https://stackoverflow.com/questions/8495367/
+    #
+    # Start the application in modified environment.
+    # https://stackoverflow.com/questions/18668947/
+    #
+    sys.argv = ['--gunicorn']
+    for k in kwargs:
+        sys.argv.append("--" + k)
+        sys.argv.append(kwargs[k])
+    return main()
+
 
 if __name__ == "__main__":
     main()
