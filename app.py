@@ -320,6 +320,9 @@ def shutdown():
 @app.route(f"/api/v{api_version}/stream")
 def stream_file(filepath = None):
 
+    # Need to perform validation on req_file to ensure it's a genuine file under movie_dir
+    # and not going to access anything outside movie_dir (e.g. parent directory)
+    # and not going to look like an additional argument to ffmpeg.
     req_file = request.args.get('file', '<None>')
     req_resume = request.args.get('resume', None)
 
