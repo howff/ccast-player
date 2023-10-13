@@ -21,6 +21,7 @@ import signal
 import socket
 import time
 import threading
+import urllib.parse
 import pychromecast
 from functools import partial
 from subprocess import Popen, PIPE, DEVNULL
@@ -223,7 +224,11 @@ def mimetype_from_filename(filename):
 # Home page returns list of files available to play
 
 def urlencode(filename):
-    return filename.replace(' ', '+')
+    #return filename.replace(' ', '+')
+    return urllib.parse.quote_plus(filename)
+
+def prettyname(filename):
+    return filename.replace('/', ' / ')
 
 @app.route("/")
 def home():
@@ -246,9 +251,10 @@ def home():
     html += '<a class="menuitem" href="/api/v1/shutdown"> | Shutdown</p>\n'
     html += '<p>\n'
     for file in files:
+        # Strip off the path prefix
         file = file.replace(dir, '')
-        html += '<br><a class="file" href="/api/v1/play?file=' + urlencode(file) + '">' + file + '\n'
-        html += '  <a class="resume" href="/api/v1/play?file=' + urlencode(file) + '&resume=0">[Restart]\n'
+        html += '<br><a class="file" href="/api/v1/play?file=' + urlencode(file) + '">' + prettyname(file) + '</a>\n'
+        html += '  <a class="resume" href="/api/v1/play?file=' + urlencode(file) + '&resume=0">[Restart]</a>\n'
     html += '</body></html>'
     return Response(html)
 
