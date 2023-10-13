@@ -81,7 +81,7 @@ def get_local_ip():
 class SeekDB:
     # Not used yet!
     def __init__(self):
-        self.db = DAL('sqlite://app.sqlite', folder='.')
+        self.db = DAL('sqlite://ccastplayer.sqlite', folder='.')
         self.db.define_table('SeekPos', Field('file', unique=True), Field('seek'))
     def get_seekpos(self, filename):
         for row in db(db.SeekPos.file == filename).select(db.SeekPos.seek):
@@ -101,7 +101,7 @@ def db_init():
     """ Open and configure the database. Call this to get a db handle
     before any reading or writing. Internal use only """
 
-    db = DAL('sqlite://app.sqlite', folder='.')
+    db = DAL('sqlite://ccastplayer.sqlite', folder='.')
     db.define_table('SeekPos', Field('file', unique=True), Field('seek'))
     return db
 
