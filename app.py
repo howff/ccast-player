@@ -348,6 +348,7 @@ def stream_file(filepath = None):
     # and not going to look like an additional argument to ffmpeg.
     req_file = request.args.get('file', '<None>')
     req_resume = request.args.get('resume', None)
+    req_file = req_file[1:] if req_file[0] == '/' else req_file
 
     logger.debug('stream_file got file %s resume %s' % (req_file, req_resume))
     global global_file_playing, global_pid, global_process, global_seekpos
@@ -366,7 +367,7 @@ def stream_file(filepath = None):
     # XXX this command only works for video, not audio
     command = ['ffmpeg',
             '-ss', str(seek_seconds),
-            '-i', movie_dir+'/'+req_file,
+            '-i', os.path.join(movie_dir, req_file),
             '-f', 'mp4',
             '-c', 'copy', '-c:a', 'aac', '-ac', '2',
             '-movflags', '+frag_keyframe+separate_moof+omit_tfhd_offset+empty_moov',
@@ -396,6 +397,7 @@ def play_file(filepath = None):
 
     req_file = request.args.get('file', '<None>')
     req_resume = request.args.get('resume', None)
+    req_file = req_file[1:] if req_file[0] == '/' else req_file
     logger.debug('play_file got %s resume %s' % (req_file, req_resume))
 
     # Start worker thread and wait for cast device to be ready
