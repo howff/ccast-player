@@ -140,12 +140,21 @@ def db_dump():
 # ---------------------------------------------------------------------
 # This function never exits, it periodically queries the Chromecast status
 # and updates global variables with the current seek position.
+# It is started as a separate thread running in the background.
 
 def monitor_chromecast(cast):
     """ Periodically get the status of the Chromecast
     if streaming our file then remember the current seek position (duration)
     otherwise assume streaming stopped so kill the ffmpeg process
     then write the final duration to the database.
+    Parameters:
+      cast - a Chromecast object returned from find_chromecast
+    Global variables:
+      global_duration - kept up to date while movie playing (or -1)
+      global_file_playing - kept up to date with current movie filename
+      global_pid - reads the ffmpeg pid and kills it when movie finished
+      global_process - the ffmpeg process object
+      logger - for logging
     e.g. [2023-01-05 16:40:22,036] DEBUG in app: <MediaStatus {'metadata_type': None, 'title': None, 'series_title': None, 'season': None, 'episode': None, 'artist': None, 'album_name': None, 'album_artist': None, 'track': None, 'subtitle_tracks': [], 'images': [], 'supports_pause': True, 'supports_seek': True, 'supports_stream_volume': True, 'supports_stream_mute': True, 'supports_skip_forward': False, 'supports_skip_backward': False, 'current_time': 5.631622, 'content_id': 'http://192.168.1.30:5000/api/v1/stream?file=/Alpinist/The.Alpinist.2021.1080p.WEB-DL.DD5.1.H.264-TEPES.mkv', 'content_type': 'video/mp4', 'duration': 10.219, 'stream_type': 'BUFFERED', 'idle_reason': None, 'media_session_id': 1, 'playback_rate': 1, 'player_state': 'BUFFERING', 'supported_media_commands': 274447, 'volume_level': 1, 'volume_muted': False, 'media_custom_data': {}, 'media_metadata': {}, 'current_subtitle_tracks': [], 'last_updated': datetime.datetime(2023, 1, 5, 16, 40, 21, 781787)}>
     """
 
@@ -186,7 +195,14 @@ def monitor_chromecast(cast):
 # Find the Chromecast
 
 def find_chromecast(desired_chromecast_name):
-    """ Find the named Chromecast and return a Cast object """
+    """ Find the named Chromecast and return a Chromecast object.
+    This can take a long time and has to keep trying.
+    Parameters:
+      desired_chromecast_name - the friendly name of the device
+    Returns:
+      the Chomecast object, being the first in the list returned
+      by get_listed_chromecasts.
+    """
 
     chromecasts = None
     while not chromecasts:
@@ -296,6 +312,7 @@ def rescan():
 
     logger.debug('rescan')
     cast = find_chromecast(desired_chromecast_name)
+    # XXX do we need to kill off the previous monitor thread?
     start_chromecast_monitor(cast)
     return Response('Please wait a minute for the Chromecast Discovery to complete')
 
