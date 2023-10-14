@@ -407,6 +407,7 @@ def play_file(filepath = None):
     # Check file actually exists (catch URL mangling)
     if not os.path.isfile(os.path.join(movie_dir, req_file)):
         return Response('Cannot find file %s' % req_file)
+
     # Start worker thread and wait for cast device to be ready
     logger.debug('Waiting for cast device to be ready...')
     cast.wait()
@@ -414,7 +415,7 @@ def play_file(filepath = None):
     logger.debug('Getting media controller...')
     mc = cast.media_controller
     logger.debug('Sending URL...')
-    local_file = stream_url + req_file
+    local_file = stream_url + urlencode(req_file)
     if req_resume is not None:
         local_file += '&resume=%s' % req_resume
     local_type = mimetype_from_filename(req_file)
