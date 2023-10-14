@@ -252,10 +252,9 @@ def prettyname(filename):
 def home():
 
     # Collect a list of movie files underneath the media directory
-    dir = movie_dir
     files = []
     ext_regex = '.*\.(' + '|'.join(video_file_ext) + ')$'
-    for root, dirslist, fileslist in os.walk(dir, followlinks = True):
+    for root, dirslist, fileslist in os.walk(movie_dir, followlinks = True):
         files += [os.path.join(root, f) for f in fileslist if re.match(ext_regex, f)]
     files = natsorted(files)
 
@@ -270,7 +269,7 @@ def home():
     html += '<p>\n'
     for file in files:
         # Strip off the path prefix
-        file = file.replace(dir, '')
+        file = file.replace(movie_dir, '')
         html += '<br><a class="file" href="/api/v1/play?file=' + urlencode(file) + '">' + prettyname(file) + '</a>\n'
         html += '  <a class="resume" href="/api/v1/play?file=' + urlencode(file) + '&resume=0">[Restart]</a>\n'
     html += '</body></html>'
