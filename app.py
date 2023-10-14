@@ -5,6 +5,8 @@
 #  python -m flask run --host 0.0.0.0
 # or just:
 #  ./app.py --help
+# or with gunicorn:
+#  /path/venv/bin/gunicorn --bind 0.0.0.0:5000 --chdir /path/ccast-player --user arb app:app
 
 import argparse
 import datetime # used when eval(MediaStatus)
