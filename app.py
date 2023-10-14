@@ -240,12 +240,17 @@ def mimetype_from_filename(filename):
 
 # ---------------------------------------------------------------------
 # Home page returns list of files available to play
+# Each movie file is a URL /api/v1/play?file=<filename>
+# and there's also a link to Restart from the beginning
+# if you don't want the auto-resume feature.
 
 def urlencode(filename):
-    #return filename.replace(' ', '+')
+    """ Encode a filename so it's suitable to be used in a URL """
     return urllib.parse.quote_plus(filename)
 
 def prettyname(filename):
+    """ Encode a filename so it looks pretty when used in HTML page.
+    Currently just puts spaces around the slashes """
     return filename.replace('/', ' / ')
 
 @app.route("/")
