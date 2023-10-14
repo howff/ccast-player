@@ -1,0 +1,18 @@
+# systemd unit file for the CCastPlayer service.
+# Install by copying to /etc/systemd/system/ccastplayer.service
+# then enable and start the service. 
+# Notify is like exec, it checks the new process has fully started,
+# unlike simple which only checks that fork succeeded,
+# except that notify waits for the new process to signal that it has started
+# which is something that gunicorn knows how to do.
+# It binds to port 5000 on all interfaces.
+
+[Unit]
+Description=CCastPlayer
+
+[Service]
+Type=notify
+ExecStart=/home/arb/src/cast/venv/bin/gunicorn --bind 0.0.0.0:5000 --chdir /home/arb/src/cast/ccast-player --user arb --error-logfile gunicorn.error.log --capture-output --log-level debug  app:app
+
+[Install]
+WantedBy=multi-user.target
