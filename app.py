@@ -400,6 +400,13 @@ def play_file(filepath = None):
     req_file = req_file[1:] if req_file[0] == '/' else req_file
     logger.debug('play_file got %s resume %s' % (req_file, req_resume))
 
+    # Validate file is still under movie_dir
+    fullpath = os.path.join(movie_dir, req_file)
+    if movie_dir not in os.path.normpath(fullpath):
+        return Response('Bad path %s because %s not in %s' % (req_file, movie_dir, os.path.normpath(fullpath)))
+    # Check file actually exists (catch URL mangling)
+    if not os.path.isfile(os.path.join(movie_dir, req_file)):
+        return Response('Cannot find file %s' % req_file)
     # Start worker thread and wait for cast device to be ready
     logger.debug('Waiting for cast device to be ready...')
     cast.wait()
