@@ -377,11 +377,21 @@ def stream_file(filepath = None):
     logger.debug('RUN %s' % command)
 
     global_process = Popen(command, stdout=PIPE, stderr=DEVNULL, stdin=DEVNULL, bufsize=-1)
-    global_file_playing = req_file
+    global_file_playing = urlencode(req_file)
     global_pid = global_process.pid
+    logger.debug('RUNNING pid %d for %s' % (global_pid, global_file_playing))
+    # Create a function that calls os.read(from process, blocksize)
+    # then an iterator which repeats until read returns empty string.
     read_chunk = partial(os.read, global_process.stdout.fileno(), chunk_size)
+    # Debugging function:
+    def feeder():
+        logger.debug('returning chunk')
+        return os.read(global_process.stdout.fileno(), chunk_size)
+    # Return the HTTP response using iterator to feed all data back
     try:
         return Response(iter(read_chunk, b""), mimetype=mtype)
+        # To debug the network transfer use this instead:
+        #return Response(iter(feeder, b""), mimetype=mtype)
     except:
         # XXX this never seems to be called
         logger.error('Connection closed?')
@@ -389,8 +399,10 @@ def stream_file(filepath = None):
 
 
 # ---------------------------------------------------------------------
+# The /play/ method is what the user calls to trigger streaming.
+# It constructs a /stream/ URL for the desired file and sends that URL
+# to the Chromecast.
 # /play?file=path/file.mp4
-# Asks the Chromecast to play the file by giving it a URL to ourself.
 
 @app.route(f"/api/v{api_version}/play")
 def play_file(filepath = None):
@@ -428,7 +440,7 @@ def play_file(filepath = None):
     logger.debug(mc.status)
     # e.g. <MediaStatus {'metadata_type': None, 'title': None, 'series_title': None, 'season': None, 'episode': None, 'artist': None, 'album_name': None, 'album_artist': None, 'track': None, 'subtitle_tracks': {}, 'images': [], 'supports_pause': True, 'supports_seek': True, 'supports_stream_volume': True, 'supports_stream_mute': True, 'supports_skip_forward': False, 'supports_skip_backward': False, 'current_time': 0, 'content_id': 'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', 'content_type': 'video/mp4', 'duration': None, 'stream_type': 'BUFFERED', 'idle_reason': None, 'media_session_id': 1, 'playback_rate': 1, 'player_state': 'IDLE', 'supported_media_commands': 274447, 'volume_level': 1, 'volume_muted': False, 'media_custom_data': {}, 'media_metadata': {}, 'current_subtitle_tracks': [], 'last_updated': datetime.datetime(2023, 1, 4, 14, 55, 51, 60789)}>
 
-    return Response(f'play file {req_file}')
+    return Response(f'Playing file {req_file}')
 
 
 
