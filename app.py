@@ -356,7 +356,7 @@ def stream_file(filepath = None):
     # Get seek position from the database if possible but override with param passed in URL
     # resume=0 starts from the beginning.
     seek_seconds = 0
-    seekpos = db_get_seekpos(req_file)
+    seekpos = db_get_seekpos(urlencode(req_file))
     if req_resume is not None:
         seekpos = float(req_resume)
     if seekpos:
@@ -365,6 +365,8 @@ def stream_file(filepath = None):
 
     chunk_size = 2048
     # XXX this command only works for video, not audio
+    # XXX could also add options to rescale to ensure no larger than 1920x1080
+    # e.g. -vf scale='min(1920,iw):-1'
     command = ['ffmpeg',
             '-ss', str(seek_seconds),
             '-i', os.path.join(movie_dir, req_file),
