@@ -45,18 +45,66 @@ global_pid = None
 global_process = None
 global_duration = -1
 global_seekpos = 0
+standalone = True
 
 
 # ---------------------------------------------------------------------
 # Configure logging
 # Uncomment the basicConfig lines to see output from Flask/pychromecast.
 
-logging_fd = logging.handlers.RotatingFileHandler(filename='ccast-player.log', maxBytes=64*1024*1024, backupCount=9)
-logging_stdout = logging.StreamHandler(sys.stdout)
-logging_handlers = [logging_fd, logging_stdout]
+#logging_fd = logging.handlers.RotatingFileHandler(filename='ccast-player.log', maxBytes=64*1024*1024, backupCount=9)
+#logging_stdout = logging.StreamHandler(sys.stdout)
+#logging_handlers = [logging_fd, logging_stdout]
 #logging.basicConfig(level=logging.DEBUG, handlers=logging_handlers,
 #    format='[%(asctime)s] {%(filename)s:%(lineno)d} %(levelname)s - %(message)s')
-logger = app.logger
+#logger = app.logger
+#logger.info('BOOTING')
+
+# ---------------------------------------------------------------------
+
+# Find a writable log directory
+logs_dir = None
+for dir in [
+        '/var/log/ccastplayer',
+        '/var/log',
+        '.'
+    ]:
+    if os.access(dir, os.W_OK):
+        logs_dir = dir
+        break
+if not logs_dir:
+    print('ERROR: cannot find a suitable logs directory', file=sys.stderr)
+    exit(1)
+
+# Configure logging if run under gunicorn
+if "gunicorn" in os.environ.get("SERVER_SOFTWARE", ""):
+    standalone = False
+    # Set the Flask app.logger to be "gunicorn.error"
+    # in case any gunicorn/flask internals use app.logger,
+    # but for our own logging we use our "app" logger instance.
+    gunicorn_logger = logging.getLogger('gunicorn.error')
+    app_logger = logging.getLogger('app')
+    # Could change the flask logger properties or just copy gunicorn obj
+    #app.logger.handlers = gunicorn_logger.handlers
+    #app.logger.handlers = app_logger.handlers
+    #app.logger.propagate = False
+    app.logger = gunicorn_logger
+else:
+    standalone = True
+    logging_fd = logging.handlers.RotatingFileHandler(
+        filename=os.path.join(logs_dir, 'ccastplayer.log'),
+        maxBytes=64*1024*1024,
+        backupCount=9)
+    logging_stdout = logging.StreamHandler(sys.stdout)
+    logging_handlers = [logging_fd] # ,logging_stdout if you want stdout too
+    logging.basicConfig(level=logging.DEBUG, handlers=logging_handlers,
+        format='[%(asctime)s] {%(filename)s:%(lineno)d} %(levelname)s - %(message)s')
+    app.logger.handlers = logging_handlers
+    app_logger = logging.getLogger('app')
+
+# First thing to do is create an AntennaSite object so logging is set up
+app_logger.debug(f'INIT: logs_dir = {logs_dir}')
+app_logger.info(f'Starting web server {__name__} with API version v{api_version}')
 
 
 # ---------------------------------------------------------------------
@@ -88,13 +136,13 @@ class SeekDB:
         self.db.define_table('SeekPos', Field('file', unique=True), Field('seek'))
     def get_seekpos(self, filename):
         for row in db(db.SeekPos.file == filename).select(db.SeekPos.seek):
-            logger.debug('Got seek position %s for %s' % (row, filename))
+            app_logger.debug('Got seek position %s for %s' % (row, filename))
             return row['seek']
         return None
     def update_seekpos(self, filename, seconds):
         db.SeekPos.update_or_insert(db.SeekPos.file == filename, file = filename, seek = seekpos)
         db.commit()
-        logger.debug('Set seek position %s for %s' % (seekpos, filename))
+        app_logger.debug('Set seek position %s for %s' % (seekpos, filename))
     def dump(self):
         for row in db().select(db.SeekPos.ALL):
             print(row)
@@ -114,7 +162,7 @@ def db_get_seekpos(filename):
 
     db = db_init()
     for row in db(db.SeekPos.file == filename).select(db.SeekPos.seek):
-        logger.debug('Got seek position %s for %s' % (row, filename))
+        app_logger.debug('Got seek position %s for %s' % (row, filename))
         return row['seek']
     return None
 
@@ -126,7 +174,7 @@ def db_update_seekpos(filename, seekpos):
     db = db_init()
     db.SeekPos.update_or_insert(db.SeekPos.file == filename, file = filename, seek = seekpos)
     db.commit()
-    logger.debug('Set seek position %s for %s' % (seekpos, filename))
+    app_logger.debug('Set seek position %s for %s' % (seekpos, filename))
 
 
 def db_dump():
@@ -154,14 +202,14 @@ def monitor_chromecast(cast):
       global_file_playing - kept up to date with current movie filename
       global_pid - reads the ffmpeg pid and kills it when movie finished
       global_process - the ffmpeg process object
-      logger - for logging
+      app_logger - for logging
     e.g. [2023-01-05 16:40:22,036] DEBUG in app: <MediaStatus {'metadata_type': None, 'title': None, 'series_title': None, 'season': None, 'episode': None, 'artist': None, 'album_name': None, 'album_artist': None, 'track': None, 'subtitle_tracks': [], 'images': [], 'supports_pause': True, 'supports_seek': True, 'supports_stream_volume': True, 'supports_stream_mute': True, 'supports_skip_forward': False, 'supports_skip_backward': False, 'current_time': 5.631622, 'content_id': 'http://192.168.1.30:5000/api/v1/stream?file=/Alpinist/The.Alpinist.2021.1080p.WEB-DL.DD5.1.H.264-TEPES.mkv', 'content_type': 'video/mp4', 'duration': 10.219, 'stream_type': 'BUFFERED', 'idle_reason': None, 'media_session_id': 1, 'playback_rate': 1, 'player_state': 'BUFFERING', 'supported_media_commands': 274447, 'volume_level': 1, 'volume_muted': False, 'media_custom_data': {}, 'media_metadata': {}, 'current_subtitle_tracks': [], 'last_updated': datetime.datetime(2023, 1, 5, 16, 40, 21, 781787)}>
     """
 
     global global_duration
     global global_file_playing
 
-    logger.debug('Monitor thread running')
+    app_logger.debug('Monitor thread running')
     while True:
         if cast.media_controller.status:
             status = str(cast.media_controller.status) # no method to get properties
@@ -172,22 +220,22 @@ def monitor_chromecast(cast):
             duration = status_dict.get('duration', -1)
             if not duration:
                 duration = -1
-            logger.debug('Media Status: at %f playing %s' % (duration, content_id))
+            app_logger.debug('Media Status: at %f playing %s' % (duration, content_id))
             if global_file_playing:
                 if global_file_playing in content_id:
-                    #logger.debug('content_id contains filename (%s)' % (global_file_playing))
+                    #app_logger.debug('content_id contains filename (%s)' % (global_file_playing))
                     if duration > 0:
                         global_duration = duration + global_seekpos # duration is an offset from the where we started which might have been seeked
                 else:
-                    #logger.debug('content_id NOT contains filename %s' % (global_file_playing))
-                    logger.debug('Killing PID %s' % global_pid)
+                    #app_logger.debug('content_id NOT contains filename %s' % (global_file_playing))
+                    app_logger.debug('Killing PID %s' % global_pid)
                     os.kill(global_pid, signal.SIGKILL) # XXX hacky. only KILL works (prob because blocked in I/O) INT and TERM don't kill
                     global_process.wait()
-                    logger.debug('Updating database with duration %f for %s' % (global_duration, global_file_playing))
+                    app_logger.debug('Updating database with duration %f for %s' % (global_duration, global_file_playing))
                     db_update_seekpos(global_file_playing, global_duration)
                     global_file_playing = None
             else:
-                logger.debug('No global_file_playing')
+                app_logger.debug('No global_file_playing')
         time.sleep(2)
 
 
@@ -206,9 +254,9 @@ def find_chromecast(desired_chromecast_name):
 
     chromecasts = None
     while not chromecasts:
-        logger.debug('Searching for "%s" ...' % desired_chromecast_name)
+        app_logger.debug('Searching for "%s" ...' % desired_chromecast_name)
         chromecasts, browser = pychromecast.get_listed_chromecasts(friendly_names=[desired_chromecast_name])
-    logger.debug('Discovered Chromecasts: %s' % chromecasts)
+    app_logger.debug('Discovered Chromecasts: %s' % chromecasts)
     # e.g. [Chromecast('unknown', port=8009, cast_info=CastInfo(services={ServiceInfo(type='mdns', data='Chromecast-282646f9f19ee5392e768c729fcb48a4._googlecast._tcp.local.')}, uuid=UUID('282646f9-f19e-e539-2e76-8c729fcb48a4'), model_name='Chromecast', friendly_name='TV', host='192.168.1.23', port=8009, cast_type='cast', manufacturer='Google Inc.'))]
 
     # Select the first (only if you've given an explicit name)
@@ -314,7 +362,7 @@ def status():
 def rescan():
     """ Look for the Chromecast again """
 
-    logger.debug('rescan')
+    app_logger.debug('rescan')
     cast = find_chromecast(desired_chromecast_name)
     # XXX do we need to kill off the previous monitor thread?
     start_chromecast_monitor(cast)
@@ -324,14 +372,14 @@ def rescan():
 # ---------------------------------------------------------------------
 @app.route(f"/api/v{api_version}/reboot")
 def reboot():
-    logger.debug('reboot')
+    app_logger.debug('reboot')
     return Response('Not yet implemented')
 
 
 # ---------------------------------------------------------------------
 @app.route(f"/api/v{api_version}/shutdown")
 def shutdown():
-    logger.debug('shutdown')
+    app_logger.debug('shutdown')
     pychromecast.discovery.stop_discovery(browser)
     return Response('Not yet implemented')
 
@@ -350,7 +398,7 @@ def stream_file(filepath = None):
     req_resume = request.args.get('resume', None)
     req_file = req_file[1:] if req_file[0] == '/' else req_file
 
-    logger.debug('stream_file got file %s resume %s' % (req_file, req_resume))
+    app_logger.debug('stream_file got file %s resume %s' % (req_file, req_resume))
     global global_file_playing, global_pid, global_process, global_seekpos
 
     # Get seek position from the database if possible but override with param passed in URL
@@ -376,18 +424,18 @@ def stream_file(filepath = None):
             'pipe:1']
     #command = ['cat', movie_dir+'/'+req_file]
     mtype = mimetype_from_filename(req_file)
-    logger.debug('RUN %s' % command)
+    app_logger.debug('RUN %s' % command)
 
     global_process = Popen(command, stdout=PIPE, stderr=DEVNULL, stdin=DEVNULL, bufsize=-1)
     global_file_playing = urlencode(req_file)
     global_pid = global_process.pid
-    logger.debug('RUNNING pid %d for %s' % (global_pid, global_file_playing))
+    app_logger.debug('RUNNING pid %d for %s' % (global_pid, global_file_playing))
     # Create a function that calls os.read(from process, blocksize)
     # then an iterator which repeats until read returns empty string.
     read_chunk = partial(os.read, global_process.stdout.fileno(), chunk_size)
     # Debugging function:
     def feeder():
-        logger.debug('returning chunk')
+        app_logger.debug('returning chunk')
         return os.read(global_process.stdout.fileno(), chunk_size)
     # Return the HTTP response using iterator to feed all data back
     try:
@@ -396,7 +444,7 @@ def stream_file(filepath = None):
         #return Response(iter(feeder, b""), mimetype=mtype)
     except:
         # XXX this never seems to be called
-        logger.error('Connection closed?')
+        app_logger.error('Connection closed?')
         return Response('ABORTED')
 
 
@@ -412,7 +460,7 @@ def play_file(filepath = None):
     req_file = request.args.get('file', '<None>')
     req_resume = request.args.get('resume', None)
     req_file = req_file[1:] if req_file[0] == '/' else req_file
-    logger.debug('play_file got %s resume %s' % (req_file, req_resume))
+    app_logger.debug('play_file got %s resume %s' % (req_file, req_resume))
 
     # Validate file is still under movie_dir
     fullpath = os.path.join(movie_dir, req_file)
@@ -423,23 +471,23 @@ def play_file(filepath = None):
         return Response('Cannot find file %s' % req_file)
 
     # Start worker thread and wait for cast device to be ready
-    logger.debug('Waiting for cast device to be ready...')
+    app_logger.debug('Waiting for cast device to be ready...')
     cast.wait()
 
-    logger.debug('Getting media controller...')
+    app_logger.debug('Getting media controller...')
     mc = cast.media_controller
-    logger.debug('Sending URL...')
+    app_logger.debug('Sending URL...')
     local_file = stream_url + urlencode(req_file)
     if req_resume is not None:
         local_file += '&resume=%s' % req_resume
     local_type = mimetype_from_filename(req_file)
-    logger.debug('Asking Chromecast to play %s' % local_file)
+    app_logger.debug('Asking Chromecast to play %s' % local_file)
     mc.play_media(local_file, local_type)
-    logger.debug('Waiting until active...')
+    app_logger.debug('Waiting until active...')
     mc.block_until_active()
 
-    logger.debug('Playing status:')
-    logger.debug(mc.status)
+    app_logger.debug('Playing status:')
+    app_logger.debug(mc.status)
     # e.g. <MediaStatus {'metadata_type': None, 'title': None, 'series_title': None, 'season': None, 'episode': None, 'artist': None, 'album_name': None, 'album_artist': None, 'track': None, 'subtitle_tracks': {}, 'images': [], 'supports_pause': True, 'supports_seek': True, 'supports_stream_volume': True, 'supports_stream_mute': True, 'supports_skip_forward': False, 'supports_skip_backward': False, 'current_time': 0, 'content_id': 'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', 'content_type': 'video/mp4', 'duration': None, 'stream_type': 'BUFFERED', 'idle_reason': None, 'media_session_id': 1, 'playback_rate': 1, 'player_state': 'IDLE', 'supported_media_commands': 274447, 'volume_level': 1, 'volume_muted': False, 'media_custom_data': {}, 'media_metadata': {}, 'current_subtitle_tracks': [], 'last_updated': datetime.datetime(2023, 1, 4, 14, 55, 51, 60789)}>
 
     return Response(f'Playing file {req_file}')
@@ -465,15 +513,15 @@ def main():
     parser.add_argument('--db_set', dest='dbset', action="store", help="set seek position (in seconds) filename=seconds (e.g. file.mp4=60)")
     args = parser.parse_args()
 
-    if args.service:
-        log_handlers = [logging_fd]
-        if args.verbose:
-            handlers += logging_stdout
-        logging.basicConfig(handlers=log_handlers,
-            format='[%(asctime)s] {%(filename)s:%(lineno)d} %(levelname)s - %(message)s')
+    #if args.service:
+    #    log_handlers = [logging_fd]
+    #    if args.verbose:
+    #        handlers += logging_stdout
+    #    logging.basicConfig(handlers=log_handlers,
+    #        format='[%(asctime)s] {%(filename)s:%(lineno)d} %(levelname)s - %(message)s')
 
-    if args.debug:
-        logger.setLevel(logging.DEBUG)
+    #if args.debug:
+    #    app_logger.setLevel(logging.DEBUG)
 
     if args.dbset:
         equ = args.dbset.rindex('=')
@@ -495,19 +543,20 @@ def main():
     ip = get_local_ip()
     stream_url = f'http://{ip}:{port}/api/v1/stream?file=' # XXX why not just use a relative URL?
 
-    #logger.debug('app.root_path = %s' % app.root_path)
-    #logger.debug('app.instance_path = %s' % app.instance_path)
-    logger.debug('chromecast = %s' % desired_chromecast_name)
-    logger.debug('ip = %s' % ip)
-    logger.debug('port = %s' % port)
-    logger.debug('movie_dir = %s' % movie_dir)
+    #app_logger.debug('app.root_path = %s' % app.root_path)
+    #app_logger.debug('app.instance_path = %s' % app.instance_path)
+    app_logger.debug('chromecast = %s' % desired_chromecast_name)
+    app_logger.debug('ip = %s' % ip)
+    app_logger.debug('port = %s' % port)
+    app_logger.debug('movie_dir = %s' % movie_dir)
 
-    logger.info('Searching for Chromecast "%s"' % desired_chromecast_name)
+    app_logger.info('Searching for Chromecast "%s"' % desired_chromecast_name)
     cast = find_chromecast(desired_chromecast_name)
     start_chromecast_monitor(cast)
 
-    logger.info('Starting web server')
-    app.run(host=args.host, port=args.port)
+    if standalone:
+        app_logger.info('Starting web server')
+        app.run(host=args.host, port=args.port)
 
 
 # Gunicorn entry point generator -- calls main() with command line arguments
@@ -519,6 +568,7 @@ def appNOTUSED(*args, **kwargs):
     # Start the application in modified environment.
     # https://stackoverflow.com/questions/18668947/
     #
+    app_logger.info('BOOT FROM APP')
     sys.argv = ['--gunicorn']
     for k in kwargs:
         sys.argv.append("--" + k)
@@ -526,5 +576,14 @@ def appNOTUSED(*args, **kwargs):
     return main()
 
 
+# If called as a command line program
 if __name__ == "__main__":
+    app_logger.info('BOOT FROM MAIN')
     main()
+
+# If simply loaded in as a module into flask
+else:
+    sys.argv = ['--flask']
+    app_logger.info('BOOT FROM FLASK')
+    main()
+
