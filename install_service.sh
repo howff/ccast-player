@@ -36,7 +36,6 @@ sed -i \
 	-e "s,--user [^ ]*,--user $currentuser," \
 	-e "s,--log-config [^ ]*,--log-config $currentdir/$name.logconf," \
 	${name}.service
-exit 1
 
 echo "Copy unit file to /etc"
 sudo cp ${name}.service /etc/systemd/system/
