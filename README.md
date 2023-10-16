@@ -17,7 +17,8 @@ cd ccast-player
 virtualenv venv
 source venv/bin/activate
 pip install -r requirements.txt
-./install_service.sh
+sudo mkdir /var/log/ccastplayer
+sudo ./install_service.sh
 ```
 
 # Configuration
@@ -28,6 +29,8 @@ When run as a service the ccastplayer.service file will chdir to this
 installation directory to find the database and will use the full
 path to the log configuration file. To change this either change the
 service file and re-install it, or edit the `install_service.sh` script.
+The logconf file specifies `/var/log/ccastplayer` as the log directory
+on the assumption the service is run by systemd but you can change this.
 
 # Usage
 
