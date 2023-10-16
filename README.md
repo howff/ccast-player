@@ -13,15 +13,21 @@ The intended use case is where you have a collection of videos and want to be ab
 ```
 sudo apt install ffmpeg # or install ffmpeg some other way
 git clone https://github.com/howff/ccast-player
+cd ccast-player
 virtualenv venv
 source venv/bin/activate
-cd ccast-player
 pip install -r requirements.txt
+./install_service.sh
 ```
 
 # Configuration
 
-The seek position database is stored in the current directory (edit the script to change this).
+The seek position database is stored in the current directory.
+The log configuration file is stored in the current directory.
+When run as a service the ccastplayer.service file will chdir to this
+installation directory to find the database and will use the full
+path to the log configuration file. To change this either change the
+service file and re-install it, or edit the `install_service.sh` script.
 
 # Usage
 
@@ -30,10 +36,13 @@ Start server
 python -m flask run
 OR
 ./app.py
+OR
+gunicorn --bind 0.0.0.0:5000 --chdir $(pwd) --log-config ccastplayer.logconf --workers=1 app:app
 ```
 
 It will take a few seconds to discover the Chromecasts on your network, sometimes up to a minute.
-Point your browser at http://localhost:5000/ select a movie to watch it.
+Point your browser at http://localhost:5000/ and select a movie to watch it,
+which if you've started watching before will resume from the last location.
 
 Full set of options:
 ```
@@ -78,6 +87,10 @@ http://localhost:5000/api/v1/stream?file=test1.mp3
 
 # Troubleshooting
 
+* Check the movie file itself, some are 4k and (currently) won't be downsampled to play on a 1080p chromecast/tv.
+
+* Also check the transcoding can run at full speed by looking at the ffmpeg output because if it can't you'll get stuttering.
+
 * Try `avahi-browse _googlecast._tcp` to see if your Chromecast is responding on the network
 
 * Use `--media_dump` to see which files are being found by the search
@@ -92,6 +105,7 @@ the `sqlite3` program if installed.
 * Try downgrading protobuf package to 3.20.x or lower.
 pip install protobuf==3.20.1
 or Set PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python (but this will use pure-Python parsing and will be much slower).
+
 * Try downgrading zeroconf package to 0.24.3 or something?
 
 # How it works
