@@ -7,12 +7,15 @@
 # which is something that gunicorn knows how to do.
 # It binds to port 5000 on all interfaces.
 
+# --log-config /path/ccastplayer.logconf
+# --error-logfile - --capture-output --log-level debug
+
 [Unit]
 Description=CCastPlayer
 
 [Service]
 Type=notify
-ExecStart=/home/arb/src/cast/venv/bin/gunicorn --bind 0.0.0.0:5000 --chdir /home/arb/src/cast/ccast-player --user arb --error-logfile gunicorn.error.log --capture-output --log-level debug  app:app
+ExecStart=/home/arb/src/cast/venv/bin/gunicorn --bind 0.0.0.0:5000 --chdir /home/arb/src/cast/ccast-player --user arb --log-config /home/arb/src/cast/ccast-player/ccastplayer.logconf --worker-class=sync --workers=1 --timeout=3600 app:app
 
 [Install]
 WantedBy=multi-user.target
