@@ -325,6 +325,7 @@ def home():
         file = file.replace(movie_dir, '')
         html += '<br><a class="file" href="/api/v1/play?file=' + urlencode(file) + '">' + prettyname(file) + '</a>\n'
         html += '  <a class="resume" href="/api/v1/play?file=' + urlencode(file) + '&resume=0">[Restart]</a>\n'
+        html += '  <a class="download" href="/api/v1/download?file=' + urlencode(file) + '">[Download]</a>\n'
     html += '</body></html>'
     return Response(html)
 
@@ -469,21 +470,31 @@ def play_file(filepath = None):
     # Check file actually exists (catch URL mangling)
     if not os.path.isfile(os.path.join(movie_dir, req_file)):
         return Response('Cannot find file %s' % req_file)
+    # Validate the resume parameter as well
+    try:
+        req_resume = float(req_resume)
+        if req_resume < 0 or req_resume > 12000:
+            req_resume = None
+    except:
+        req_resume = None
 
     # Start worker thread and wait for cast device to be ready
     app_logger.debug('Waiting for cast device to be ready...')
-    cast.wait()
+    # If we timeout after 10 seconds (to prevent web server getting hung up permanently) what happens if it does timeout?
+    cast.wait(timeout = 10)
 
     app_logger.debug('Getting media controller...')
     mc = cast.media_controller
-    app_logger.debug('Sending URL...')
+
     local_file = stream_url + urlencode(req_file)
     if req_resume is not None:
         local_file += '&resume=%s' % req_resume
     local_type = mimetype_from_filename(req_file)
     app_logger.debug('Asking Chromecast to play %s' % local_file)
     mc.play_media(local_file, local_type)
+
     app_logger.debug('Waiting until active...')
+    # What happens if this blocks forever?
     mc.block_until_active()
 
     app_logger.debug('Playing status:')
@@ -492,6 +503,42 @@ def play_file(filepath = None):
 
     return Response(f'Playing file {req_file}')
 
+
+# ---------------------------------------------------------------------
+# The /download/ method allows the user to download the raw video file.
+# /download?file=path/file.mp4
+
+@app.route(f"/api/v{api_version}/download")
+def download_file(filepath = None):
+
+    # Need to perform validation on req_file to ensure it's a genuine file under movie_dir
+    # and not going to access anything outside movie_dir (e.g. parent directory)
+    # and not going to look like an additional argument to ffmpeg.
+    req_file = request.args.get('file', '<None>')
+    req_file = req_file[1:] if req_file[0] == '/' else req_file
+    app_logger.debug('download got request %s' % (req_file))
+
+    # Validate file is still under movie_dir
+    fullpath = os.path.join(movie_dir, req_file)
+    if movie_dir not in os.path.normpath(fullpath):
+        return Response('Bad path %s because %s not in %s' % (req_file, movie_dir, os.path.normpath(fullpath)))
+    # Check file actually exists (catch URL mangling)
+    if not os.path.isfile(os.path.join(movie_dir, req_file)):
+        return Response('Cannot find file %s' % req_file)
+    app_logger.debug('download found file %s' % (real_file))
+
+    mtype = mimetype_from_filename(req_file)
+    with open(fullpath) as fd:
+        # Create a function that calls os.read(from process, blocksize)
+        # then an iterator which repeats until read returns empty string.
+        read_chunk = partial(os.read, fd.fileno(), chunk_size)
+        # Return the HTTP response using iterator to feed all data back
+        try:
+            return Response(iter(read_chunk, b""), mimetype=mtype)
+        except:
+            # XXX this never seems to be called
+            app_logger.error('Connection closed?')
+            return Response('ABORTED')
 
 
 # ---------------------------------------------------------------------
