@@ -27,7 +27,7 @@ import urllib.parse
 import pychromecast
 from functools import partial
 from subprocess import Popen, PIPE, DEVNULL
-from flask import Flask, Response, jsonify, redirect, render_template, request, url_for
+from flask import Flask, Response, jsonify, redirect, render_template, request, url_for, stream_with_context
 #from flask.helpers import make_response
 
 
@@ -45,6 +45,7 @@ global_pid = None
 global_process = None
 global_duration = -1
 global_seekpos = 0
+chunk_size = 2048
 standalone = True
 
 
@@ -412,7 +413,6 @@ def stream_file(filepath = None):
         global_seekpos = float(seekpos) # need to keep global so 'duration' can be added to it
         seek_seconds = global_seekpos
 
-    chunk_size = 2048
     # XXX this command only works for video, not audio
     # XXX could also add options to rescale to ensure no larger than 1920x1080
     # e.g. -vf scale='min(1920,iw):-1'
@@ -525,20 +525,24 @@ def download_file(filepath = None):
     # Check file actually exists (catch URL mangling)
     if not os.path.isfile(os.path.join(movie_dir, req_file)):
         return Response('Cannot find file %s' % req_file)
-    app_logger.debug('download found file %s' % (real_file))
+    app_logger.debug('download found file %s' % (fullpath))
 
-    mtype = mimetype_from_filename(req_file)
-    with open(fullpath) as fd:
-        # Create a function that calls os.read(from process, blocksize)
-        # then an iterator which repeats until read returns empty string.
-        read_chunk = partial(os.read, fd.fileno(), chunk_size)
-        # Return the HTTP response using iterator to feed all data back
-        try:
-            return Response(iter(read_chunk, b""), mimetype=mtype)
-        except:
-            # XXX this never seems to be called
-            app_logger.error('Connection closed?')
-            return Response('ABORTED')
+    #mtype = mimetype_from_filename(req_file) # serve as movie
+    mtype = 'application/octet-stream'        # serve as binary file
+    def feeder(filename):
+        with open(filename, 'rb') as fd:
+            while True:
+                buf = fd.read(chunk_size)
+                if buf:
+                    yield buf
+                else:
+                    break
+    # Return the HTTP response using iterator to feed all data back
+    return Response(stream_with_context(feeder(fullpath)), mimetype=mtype,
+        headers={
+            'Content-Disposition': f'attachment; filename={os.path.basename(fullpath)}'
+        }
+    )
 
 
 # ---------------------------------------------------------------------
