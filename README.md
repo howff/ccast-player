@@ -90,6 +90,8 @@ http://localhost:5000/api/v1/stream?file=test1.mp3
 
 # Troubleshooting
 
+* Make sure the TV is switched on when starting the service or calling the web page otherwise it will hang (even if all you want to do is to download a file)
+
 * Check the movie file itself, some are 4k and (currently) won't be downsampled to play on a 1080p chromecast/tv.
 
 * Also check the transcoding can run at full speed by looking at the ffmpeg output because if it can't you'll get stuttering.
@@ -126,3 +128,5 @@ or Set PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python (but this will use pure-Pyt
 * https://github.com/ur1katz/casttube - similar
 * https://github.com/yt-dlp/yt-dlp - used by the above
 * https://github.com/home-assistant-libs/pychromecast - what this server is built on
+* https://github.com/palaviv/caster - includes subtitle support
+
