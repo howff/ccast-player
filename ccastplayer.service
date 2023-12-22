@@ -15,7 +15,7 @@ Description=CCastPlayer
 
 [Service]
 Type=notify
-ExecStart=/home/arb/src/cast/ccast-player/venv/bin/gunicorn --bind 0.0.0.0:5000 --chdir /home/arb/src/cast/ccast-player --user arb --log-config /home/arb/src/cast/ccast-player/ccastplayer.logconf --worker-class=sync --workers=1 --timeout=3600 app:app
+ExecStart=/home/arb/src/cast/ccast-player/venv/bin/gunicorn --bind 0.0.0.0:5000 --chdir /home/arb/src/cast/ccast-player --user arb --log-config /home/arb/src/cast/ccast-player/ccastplayer.logconf --worker-class=sync --workers=1 --timeout=10800 --capture-output app:app
 
 [Install]
 WantedBy=multi-user.target
