@@ -113,6 +113,9 @@ else:
         backupCount=9)
     logging_stdout = logging.StreamHandler(sys.stdout)
     logging_handlers = [logging_fd] # ,logging_stdout if you want stdout too
+    # If interactive then log to stdout too
+    if sys.stdin.isatty():
+        logging_handlers += [logging_stdout]
     logging.basicConfig(level=logging.DEBUG, handlers=logging_handlers,
         format='[%(asctime)s] {%(filename)s:%(lineno)d} %(levelname)s - %(message)s')
     app.logger.handlers = logging_handlers
