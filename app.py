@@ -455,8 +455,9 @@ def stream_file(filepath = None):
     read_chunk = partial(os.read, global_process.stdout.fileno(), chunk_size)
     # Debugging function:
     def feeder():
-        app_logger.debug('returning chunk')
-        return os.read(global_process.stdout.fileno(), chunk_size)
+        chunk = os.read(global_process.stdout.fileno(), chunk_size)
+        app_logger.debug('returning chunk size %d = %s' % (len(chunk),chunk))
+        return chunk
     # Return the HTTP response using iterator to feed all data back
     try:
         return Response(iter(read_chunk, b""), mimetype=mtype)
