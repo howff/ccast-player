@@ -51,7 +51,7 @@ api_version="1"
 desired_chromecast_name = 'TV'
 port = 5000
 movie_dir = '/mnt/cifs/shared/video/movies'
-stream_url = f'http://192.168.1.30:{port}/api/v1/stream?file='
+stream_url = None # will become something like 'http://192.168.1.30:{port}/api/v1/stream?file='
 audio_file_ext = ['.mp3', '.opus', '.ogg', '.flac', '.wav']
 video_file_ext = ['avi', 'mov', 'mkv', 'mp4', 'flv', 'ts']
 cast = None
@@ -566,17 +566,21 @@ def download_file(filepath = None):
 
 def main():
     global cast
+    global movie_dir
+    global port
+    global desired_chromecast_name
+    global stream_url
 
     parser = argparse.ArgumentParser(description='CCast-Player')
     parser.add_argument('-v', '--verbose', action="store_true", help='verbose (logs to screen when running with --service)')
     parser.add_argument('-d', '--debug', action="store_true", help='debug')
     parser.add_argument('--service', action="store_true", help='run as a daemon service (logs to a file)')
     parser.add_argument('--host', dest='host', action="store", help='network interfaces to listen on (default %(default)s)', default='0.0.0.0')
-    parser.add_argument('--port', dest='port', action="store", help='network port to listen on (default %(default)s)', default='5000')
-    parser.add_argument('--chromecast', dest='chromecast', action="store", help='name of Chromecast to cast to (default %(default)s)', default='TV')
-    parser.add_argument('--media', dest='media', action="store", help='location of media files (default %(default)s)', default='/mnt/cifs/shared/video/movies')
-    parser.add_argument('--media_dump', dest='mediadump', action="store_true", help="display the list of files")
-    parser.add_argument('--db_dump', dest='dbdump', action="store_true", help="display the database")
+    parser.add_argument('--port', dest='port', action="store", help='network port to listen on (default %(default)s)', default=str(port))
+    parser.add_argument('--chromecast', dest='chromecast', action="store", help='name of Chromecast to cast to (default %(default)s)', default=desired_chromecast_name)
+    parser.add_argument('--media', dest='media', action="store", help='location of media files (default %(default)s)', default=movie_dir)
+    parser.add_argument('--media_dump', dest='mediadump', action="store_true", help="display the list of movie files")
+    parser.add_argument('--db_dump', dest='dbdump', action="store_true", help="display the database of seek positions")
     parser.add_argument('--db_set', dest='dbset', action="store", help="set seek position (in seconds) filename=seconds (e.g. file.mp4=60)")
     args = parser.parse_args()
 
@@ -623,7 +627,7 @@ def main():
 
     if standalone:
         app_logger.info('Starting web server')
-        app.run(host=args.host, port=args.port)
+        app.run(host=args.host, port=port)
 
 
 # Gunicorn entry point generator -- calls main() with command line arguments
