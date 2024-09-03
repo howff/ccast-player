@@ -28,10 +28,12 @@ import pychromecast
 from functools import partial
 from subprocess import Popen, PIPE, DEVNULL
 from flask import Flask, Response, jsonify, redirect, render_template, request, url_for, stream_with_context
+from flask_cors import CORS
 #from flask.helpers import make_response
 
 
 app = Flask(__name__)
+CORS(app) # ,origins=['http://localhost:5000']
 api_version="1"
 desired_chromecast_name = 'TV'
 port = 5000
