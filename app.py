@@ -441,7 +441,8 @@ def stream_file(filepath = None):
             '-c', 'copy', '-c:a', 'aac', '-ac', '2',
             '-movflags', '+frag_keyframe+separate_moof+omit_tfhd_offset+empty_moov',
             'pipe:1']
-    #command = ['cat', movie_dir+'/'+req_file]
+    # Remove empty elements
+    command[:] = [x for x in command if x and len(x)]
     mtype = mimetype_from_filename(req_file)
     app_logger.debug('RUN %s' % command)
 
