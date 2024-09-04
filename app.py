@@ -209,10 +209,11 @@ def db_get_last_modified(filename):
     This will be the time when a seek position was updated. """
 
     db = db_init()
+    null_date = datetime.datetime(2000,1,1)
     for row in db(db.SeekPos.file == filename).select(db.SeekPos.last_modified):
         app_logger.debug('Got last modified %s for %s' % (row, filename))
-        return row['last_modified']
-    return datetime.datetime(2000,1,1)
+        return row['last_modified'] if row['last_modified'] else null_date
+    return null_date
 
 
 def db_dump():
