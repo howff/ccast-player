@@ -24,6 +24,7 @@ import json
 import logging, logging.handlers
 import os
 import re
+import subprocess
 import sys
 from natsort import natsorted
 from pydal import DAL, Field
@@ -47,7 +48,7 @@ api_version="1"
 desired_chromecast_name = 'TV'
 port = 5000
 movie_dir = '/mnt/cifs/shared/video/movies'
-stream_url = None # will become something like 'http://192.168.1.30:{port}/api/v1/stream?file='
+stream_url = None   # will become something like 'http://192.168.1.30:{port}/api/v1/stream?file='
 download_url = None # ditto
 audio_file_ext = ['.mp3', '.opus', '.ogg', '.flac', '.wav']
 video_file_ext = ['avi', 'mov', 'mkv', 'mp4', 'flv', 'ts']
@@ -59,6 +60,7 @@ global_duration = -1
 global_seekpos = 0
 chunk_size = 2048
 standalone = True
+debug = True
 
 
 # ---------------------------------------------------------------------
@@ -113,7 +115,8 @@ else:
     # If interactive then log to stdout too
     if sys.stdin.isatty():
         logging_handlers += [logging_stdout]
-    logging.basicConfig(level=logging.DEBUG, handlers=logging_handlers,
+    level = logging.DEBUG if debug else logging.WARN
+    logging.basicConfig(level=level, handlers=logging_handlers,
         format='[%(asctime)s] {%(filename)s:%(lineno)d} %(levelname)s - %(message)s')
     app.logger.handlers = logging_handlers
     app_logger = logging.getLogger('app')
@@ -383,9 +386,13 @@ def home():
     html += '<a class="menuitem" href="/api/v1/shutdown"> | Shutdown</p>\n'
     html += '<p>\n'
     for file in files:
+        # Check if subtitles file exists
+        subtitle_file = file + '.vtt'
         # Strip off the path prefix
         file = file.replace(movie_dir, '')
         html += '<br><a class="file" href="/api/v1/play?file=' + urlencode(file) + '">' + prettyname(file) + '</a>\n'
+        if os.path.isfile(subtitle_file):
+            html += '  <a class="file"   href="/api/v1/play?file=' + urlencode(file) + '&subtitles=1">[Subtitles]</a>\n'
         html += '  <a class="resume" href="/api/v1/play?file=' + urlencode(file) + '&resume=0">[Restart]</a>\n'
         html += '  <a class="download" href="/api/v1/download?file=' + urlencode(file) + '">[Download]</a>\n'
     html += '</body></html>'
@@ -475,22 +482,63 @@ def stream_file(filepath = None):
         global_seekpos = float(seekpos) # need to keep global so 'duration' can be added to it
         seek_seconds = global_seekpos
 
+    # Find out which audio/subtitle streams are available
+    # Example ffprobe output:
+    #Input #0, matroska,webm, from 'Himalaya (check subtitles).mkv':
+    #  Duration: 01:48:24.50, start: 0.000000, bitrate: 10476 kb/s
+    #  Stream #0:0: Video: h264 (High), yuv420p(progressive), 1920x818, SAR 1:1 DAR 960:409, 23.98 fps, 23.98 tbr, 1k tbn (default)
+    #  Stream #0:1(tib): Audio: dts (DTS), 48000 Hz, 5.1(side), fltp, 1536 kb/s (default)
+    #  Stream #0:2(dut): Subtitle: subrip (default)
+    #  Stream #0:3(eng): Subtitle: subrip
+    command = ['ffprobe',
+            os.path.join(movie_dir, req_file),
+            ]
+    app_logger.debug('RUN %s' % ' '.join(command))
+    output = subprocess.check_output(command, shell=False, stderr=subprocess.STDOUT).decode('utf-8')
+    audio_eng = None
+    subtitle_eng = None
+    subtitle_count = -1
+    subtitle_cmd = ''
+    for line in output.splitlines():
+        # group1:group2 is stream, group3=language, group4=A for audio, V for video, S for subtitle
+        rc=re.match('.*Stream #([0-9]):([0-9])\(([a-z][a-z][a-z])\): ([AVS])', line)
+        if not rc:
+            continue
+        if rc.group(4) == 'A':
+            if rc.group(3) == 'eng':
+                audio_eng = rc.group(1)+':'+rc.group(2)
+        if rc.group(4) == 'S':
+            subtitle_count += 1
+            if rc.group(3) == 'eng':
+                subtitle_eng = subtitle_count
+    if not audio_eng:
+        if subtitle_eng:
+            # need to burn subtitle onto video because no english is available
+            full_filename = os.path.join(movie_dir, req_file)
+            subtitle_cmd = f'-vf subtitles={full_filename}:si={subtitle_eng}'
+    subtitle_cmd = ''
+
+    mtype = mimetype_from_filename(req_file)
+
     # XXX this command only works for video, not audio
     # XXX could also add options to rescale to ensure no larger than 1920x1080
     # e.g. -vf scale='min(1920,iw):-1'
     command = ['ffmpeg',
             '-ss', str(seek_seconds),
             '-i', os.path.join(movie_dir, req_file),
-            '-f', 'mp4',
+            '-f', 'mp4', # XXX mp4 or matroska, but matroska won't return seek offset during play
             '-c', 'copy', '-c:a', 'aac', '-ac', '2',
+            subtitle_cmd,
             '-movflags', '+frag_keyframe+separate_moof+omit_tfhd_offset+empty_moov',
             'pipe:1']
     # Remove empty elements
     command[:] = [x for x in command if x and len(x)]
-    mtype = mimetype_from_filename(req_file)
-    app_logger.debug('RUN %s' % command)
+    app_logger.debug('RUN %s' % ' '.join(command))
 
-    global_process = Popen(command, stdout=PIPE, stderr=DEVNULL, stdin=DEVNULL, bufsize=-1)
+    mtype = mimetype_from_filename(req_file)
+
+    stderr_dest = sys.stdout if debug else DEVNULL
+    global_process = Popen(command, stdout=PIPE, stderr=stderr_dest, stdin=DEVNULL, bufsize=-1)
     global_file_playing = urlencode(req_file)
     global_pid = global_process.pid
     app_logger.debug('RUNNING pid %d for %s' % (global_pid, global_file_playing))
@@ -519,12 +567,14 @@ def stream_file(filepath = None):
 # to the Chromecast.
 # /play?file=path/file.mp4
 # Add &resume=0 to restart instead of continuing where you left off.
+# Add &subtitles=1 to overlay subtitles from filename.vtt (e.g. movie.mp4.vtt)
 
 @app.route(f"/api/v{api_version}/play")
 def play_file(filepath = None):
 
     req_file = request.args.get('file', '<None>')
     req_resume = request.args.get('resume', None)
+    req_subtitles = request.args.get('subtitles', None)
     req_file = req_file[1:] if req_file[0] == '/' else req_file
     app_logger.debug('play_file got %s resume %s' % (req_file, req_resume))
 
@@ -533,7 +583,7 @@ def play_file(filepath = None):
     if movie_dir not in os.path.normpath(fullpath):
         return Response('Bad path %s because %s not in %s' % (req_file, movie_dir, os.path.normpath(fullpath)))
     # Check file actually exists (catch URL mangling)
-    if not os.path.isfile(os.path.join(movie_dir, req_file)):
+    if not os.path.isfile(fullpath):
         return Response('Cannot find file %s' % req_file)
     # Validate the resume parameter as well
     try:
@@ -543,6 +593,22 @@ def play_file(filepath = None):
     except:
         req_resume = None
 
+    # Construct the streaming URL
+    file_url = stream_url + urlencode(req_file)
+    subtitle_url = download_url + urlencode(req_file + '.vtt')
+
+    # Check there's a subtitles file alongside
+    if req_subtitles and os.path.isfile(fullpath + '.vtt'):
+        req_subtitles = {
+            'subtitles' : subtitle_url,
+            'subtitles_lang' : 'en-US',
+            'subtitles_mime' : 'text/vtt',
+            'subtitle_id'    : 1
+        }
+    else:
+        req_subtitles = {}
+    app_logger.debug('play_file got subtitles %s' % (req_subtitles))
+
     # Start worker thread and wait for cast device to be ready
     app_logger.debug('Waiting for cast device to be ready...')
     # If we timeout after 10 seconds (to prevent web server getting hung up permanently) what happens if it does timeout?
@@ -551,12 +617,22 @@ def play_file(filepath = None):
     app_logger.debug('Getting media controller...')
     mc = cast.media_controller
 
-    local_file = stream_url + urlencode(req_file)
     if req_resume is not None:
-        local_file += '&resume=%s' % req_resume
-    local_type = mimetype_from_filename(req_file)
-    app_logger.debug('Asking Chromecast to play %s' % local_file)
-    mc.play_media(local_file, local_type)
+        file_url += '&resume=%s' % req_resume
+    file_type = mimetype_from_filename(req_file)
+    app_logger.debug('Asking Chromecast to play %s' % file_url)
+    mc.play_media(file_url, file_type, **req_subtitles)
+    # play_media also accepts these parameters:
+    #    subtitles: str | None = None,
+    #    subtitles_lang: str = "en-US",
+    #    subtitles_mime: str = "text/vtt",
+    #    subtitle_id: int = 1,
+    # There's also an enable_subtitle() call which takes a trackid
+    if req_subtitles:
+        app_logger.debug('Asking Chromecast to enable subtitle %s' % 1)
+        mc.update_status()
+        mc.enable_subtitle(1)
+
 
     app_logger.debug('Waiting until active...')
     # What happens if this blocks forever?
@@ -641,8 +717,9 @@ def main():
     #    logging.basicConfig(handlers=log_handlers,
     #        format='[%(asctime)s] {%(filename)s:%(lineno)d} %(levelname)s - %(message)s')
 
-    #if args.debug:
-    #    app_logger.setLevel(logging.DEBUG)
+    if args.debug:
+        debug = True
+        app_logger.setLevel(logging.DEBUG)
 
     if args.dbset:
         equ = args.dbset.rindex('=')
