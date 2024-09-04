@@ -148,28 +148,37 @@ class SeekDB:
     # Not used yet!
     def __init__(self):
         self.db = DAL('sqlite://ccastplayer.sqlite', folder='.')
-        self.db.define_table('SeekPos', Field('file', unique=True), Field('seek'))
+        self.db.define_table('SeekPos', Field('file', unique=True), Field('seek'), Field('last_modified', type='datetime'))
     def get_seekpos(self, filename):
         for row in db(db.SeekPos.file == filename).select(db.SeekPos.seek):
             app_logger.debug('Got seek position %s for %s' % (row, filename))
             return row['seek']
         return None
     def update_seekpos(self, filename, seconds):
-        db.SeekPos.update_or_insert(db.SeekPos.file == filename, file = filename, seek = seekpos)
+        db.SeekPos.update_or_insert(db.SeekPos.file == filename, file = filename, seek = seekpos, last_modified = datetime.datetime.now())
         db.commit()
         app_logger.debug('Set seek position %s for %s' % (seekpos, filename))
+    def get_last_modified(self, filename):
+        for row in db(db.SeekPos.file == filename).select(db.SeekPos.last_modified):
+            app_logger.debug('Got last modified %s for %s' % (row, filename))
+            return row['last_modified']
+        return 0
     def dump(self):
         for row in db().select(db.SeekPos.ALL):
             print(row)
 
 
+global_db = None
+
 def db_init():
     """ Open and configure the database. Call this to get a db handle
     before any reading or writing. Internal use only """
 
-    db = DAL('sqlite://ccastplayer.sqlite', folder='.')
-    db.define_table('SeekPos', Field('file', unique=True), Field('seek'))
-    return db
+    global global_db
+    if not global_db:
+        global_db = DAL('sqlite://ccastplayer.sqlite', folder='.')
+        global_db.define_table('SeekPos', Field('file', unique=True), Field('seek'), Field('last_modified', type='datetime'))
+    return global_db
 
 
 def db_get_seekpos(filename):
@@ -187,9 +196,20 @@ def db_update_seekpos(filename, seekpos):
         with a value of seekpos for the given filename. """
 
     db = db_init()
-    db.SeekPos.update_or_insert(db.SeekPos.file == filename, file = filename, seek = seekpos)
+    db.SeekPos.update_or_insert(db.SeekPos.file == filename, file = filename, seek = seekpos, last_modified = datetime.datetime.now())
     db.commit()
     app_logger.debug('Set seek position %s for %s' % (seekpos, filename))
+
+
+def db_get_last_modified(filename):
+    """ Return the last_modified time of the filename in the database, or 0.
+    This will be the time when a seek position was updated. """
+
+    db = db_init()
+    for row in db(db.SeekPos.file == filename).select(db.SeekPos.last_modified):
+        app_logger.debug('Got last modified %s for %s' % (row, filename))
+        return row['last_modified']
+    return datetime.datetime(2000,1,1)
 
 
 def db_dump():
