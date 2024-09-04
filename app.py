@@ -363,9 +363,6 @@ def home():
                     'last_accessed': os.path.getatime(fullpath),
                     'last_watched' : db_get_last_modified(dbpath),
                 }]
-    for f in files:
-        if f['last_watched'] > datetime.datetime(2010,1,1):
-            app_logger.info(f)
     if 'mtime' in req_sort:
         files = [x['filename'] for x in sorted(files, key=lambda x : x['last_modified'], reverse=True)]
     elif 'atime' in req_sort:
