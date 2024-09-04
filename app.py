@@ -52,6 +52,7 @@ desired_chromecast_name = 'TV'
 port = 5000
 movie_dir = '/mnt/cifs/shared/video/movies'
 stream_url = None # will become something like 'http://192.168.1.30:{port}/api/v1/stream?file='
+download_url = None # ditto
 audio_file_ext = ['.mp3', '.opus', '.ogg', '.flac', '.wav']
 video_file_ext = ['avi', 'mov', 'mkv', 'mp4', 'flv', 'ts']
 cast = None
@@ -575,6 +576,7 @@ def main():
     global port
     global desired_chromecast_name
     global stream_url
+    global download_url
 
     parser = argparse.ArgumentParser(description='CCast-Player')
     parser.add_argument('-v', '--verbose', action="store_true", help='verbose (logs to screen when running with --service)')
@@ -618,6 +620,7 @@ def main():
     movie_dir = args.media
     ip = get_local_ip()
     stream_url = f'http://{ip}:{port}/api/v1/stream?file=' # XXX why not just use a relative URL?
+    download_url = f'http://{ip}:{port}/api/v1/download?file=' # XXX why not just use a relative URL?
 
     #app_logger.debug('app.root_path = %s' % app.root_path)
     #app_logger.debug('app.instance_path = %s' % app.instance_path)
