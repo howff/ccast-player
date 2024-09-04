@@ -44,8 +44,18 @@ gunicorn --bind 0.0.0.0:5000 --chdir $(pwd) --log-config ccastplayer.logconf --w
 ```
 
 It will take a few seconds to discover the Chromecasts on your network, sometimes up to a minute.
+
 Point your browser at http://localhost:5000/ and select a movie to watch it,
 which if you've started watching before will resume from the last location.
+
+Additional options are available:
+
+The list of movies can be sorted:
+* By name - http://localhost:5000/?sort=name (the default, uses a natural sorting method)
+* By most recently modified file - http://localhost:5000/?sort=mtime (base on the modification time of the movie file)
+* By most recently accessed file - http://localhost:5000/?sort=atime (based on the access time of the movie file)
+* By most recently watched file - http://localhost:5000/?sort=wtime (based on the time when a seek position was recorded in the database)
+
 
 Full set of options:
 ```
@@ -73,11 +83,14 @@ You will want to specify at least:
 List all movies
 ```
 curl http://localhost:5000/
+curl http://localhost:5000/?sort=XXX where XXX is name,mtime,atime,wtime
 ```
 
 Play a file
 ```
 curl http://localhost:5000/api/v1/play?file=test1.mp3
+curl http://localhost:5000/api/v1/play?file=test1.mp3?resume=0
+curl http://localhost:5000/api/v1/play?file=test1.mp3?subtitles=1
 ```
 You must URL-encode the filename, i.e. no spaces.
 
@@ -87,6 +100,13 @@ and transcodes in the process.
 ```
 http://localhost:5000/api/v1/stream?file=test1.mp3
 ```
+
+Use `resume=0` to ignore the seek position in the database and start watching from the beginning.
+
+Use `subtitles=1` to display the subtitles from the WEBVTT format file
+with the movie filename plus `.vtt` appended (i.e. append .vtt, don't replace .mp4 with .vtt).
+You can use ffmpeg to convert srt to vtt format.
+The movie file listing will only show a Subtitles option if this file is available.
 
 # Troubleshooting
 
