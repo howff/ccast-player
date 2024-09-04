@@ -8,8 +8,8 @@
 # or with gunicorn:
 #  /path/venv/bin/gunicorn --bind 0.0.0.0:5000 --chdir /path/ccast-player --user arb app:app
 #
-# TODO 2 - show directory name in bold
-# TODO 3 - show current seek offset if already started watching
+# TODO 2 - show directory name in bold?
+# TODO 3 - where it says [Resume] should show how many mins:secs have been watched (ideally also percentage through movie)
 # TODO 4 - show movie duration
 # TODO 5 - pick the (eng) audio stream, and if none then burn in subtitles (eng)
 # TODO 6 - if you resume, with subtitles, the offset is wrong, as
@@ -368,34 +368,54 @@ def home():
                     'last_watched' : db_get_last_modified(dbpath),
                 }]
     if 'mtime' in req_sort:
-        files = [x['filename'] for x in sorted(files, key=lambda x : x['last_modified'], reverse=True)]
+        files = [x for x in sorted(files, key=lambda x : x['last_modified'], reverse=True)]
     elif 'atime' in req_sort:
-        files = [x['filename'] for x in sorted(files, key=lambda x : x['last_accessed'], reverse=True)]
+        files = [x for x in sorted(files, key=lambda x : x['last_accessed'], reverse=True)]
     elif 'wtime' in req_sort:
-        files = [x['filename'] for x in sorted(files, key=lambda x : x['last_watched'], reverse=True)]
+        files = [x for x in sorted(files, key=lambda x : x['last_watched'], reverse=True)]
     else:
-        files = natsorted([x['filename'] for x in files])
+        files = natsorted(files)
 
 
     # Create HTML document listing movie files with option to Restart from beginning
     html = '<html><head><title>CCast-Player</title></head><body>\n'
+    html += '<style>\n'
+    html += ' .menu { }\n'
+    html += ' .menuitem { }\n'
+    html += ' .file { }\n'
+    html += ' .resume { }\n'
+    html += ' .download { }\n'
+    html += '</style>\n'
     html += '<p class="cast">Using Chromecast: %s</p>\n' % desired_chromecast_name
-    html += '<p class="menu">'
-    html += '<a class="menuitem" href="/api/v1/status">| Status'
-    html += '<a class="menuitem" href="/api/v1/rescan">| Rescan'
-    html += '<a class="menuitem" href="/api/v1/reboot"> | Reboot'
-    html += '<a class="menuitem" href="/api/v1/shutdown"> | Shutdown</p>\n'
+    html += '<p class="menu">Service: '
+    html += ' <a class="menuitem" href="/api/v1/status">| Status</a>'
+    html += ' <a class="menuitem" href="/api/v1/rescan">| Rescan</a>'
+    html += ' <a class="menuitem" href="/api/v1/reboot"> | Reboot</a>'
+    html += ' <a class="menuitem" href="/api/v1/shutdown"> | Shutdown</a></p>\n'
+    html += '<p class="menu">Sort by: '
+    html += ' <a class="menuitem" href="/?sort=name">| Name</a>'
+    html += ' <a class="menuitem" href="/?sort=mtime">| Modified</a>'
+    html += ' <a class="menuitem" href="/?sort=atime">| Accessed</a>'
+    html += ' <a class="menuitem" href="/?sort=wtime">| Watched</a>'
     html += '<p>\n'
-    for file in files:
+    null_date = datetime.datetime(2000,1,1)
+    for file_info in files:
+        filename = file_info['filename']
         # Check if subtitles file exists
-        subtitle_file = file + '.vtt'
+        subtitle_file = filename + '.vtt'
         # Strip off the path prefix
-        file = file.replace(movie_dir, '')
-        html += '<br><a class="file" href="/api/v1/play?file=' + urlencode(file) + '">' + prettyname(file) + '</a>\n'
+        filename = filename.replace(movie_dir, '')
+        play_url = '/api/v1/play?file=' + urlencode(filename)
+        download_url = '/api/v1/download?file=' + urlencode(filename)
+        html += '<br>%s ' % prettyname(filename)
+        if file_info['last_watched'] > null_date:
+            html += '<a class="file" href="' + play_url + '">[Resume]</a>\n'
+        else:
+            html += '<a class="file" href="' + play_url + '">[Watch]</a>\n'
         if os.path.isfile(subtitle_file):
-            html += '  <a class="file"   href="/api/v1/play?file=' + urlencode(file) + '&subtitles=1">[Subtitles]</a>\n'
-        html += '  <a class="resume" href="/api/v1/play?file=' + urlencode(file) + '&resume=0">[Restart]</a>\n'
-        html += '  <a class="download" href="/api/v1/download?file=' + urlencode(file) + '">[Download]</a>\n'
+            html += '  <a class="file"   href="' + play_url + '&subtitles=1">[Subtitles]</a>\n'
+        html += '  <a class="resume" href="' + play_url + '&resume=0">[Restart]</a>\n'
+        html += '  <a class="download" href="' + download_url + '">[Download]</a>\n'
     html += '</body></html>'
     return Response(html)
 
