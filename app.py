@@ -8,17 +8,13 @@
 # or with gunicorn:
 #  /path/venv/bin/gunicorn --bind 0.0.0.0:5000 --chdir /path/ccast-player --user arb app:app
 #
-# TODO 1 - allow sorting by file modification time so you can get most recent first
 # TODO 2 - show directory name in bold
 # TODO 3 - show current seek offset if already started watching
 # TODO 4 - show movie duration
 # TODO 5 - pick the (eng) audio stream, and if none then burn in subtitles (eng)
-#Input #0, matroska,webm, from 'Himalaya (check subtitles).mkv':
-#  Duration: 01:48:24.50, start: 0.000000, bitrate: 10476 kb/s
-#  Stream #0:0: Video: h264 (High), yuv420p(progressive), 1920x818, SAR 1:1 DAR 960:409, 23.98 fps, 23.98 tbr, 1k tbn (default)
-#  Stream #0:1(tib): Audio: dts (DTS), 48000 Hz, 5.1(side), fltp, 1536 kb/s (default)
-#  Stream #0:2(dut): Subtitle: subrip (default)
-#  Stream #0:3(eng): Subtitle: subrip
+# TODO 6 - if you resume, with subtitles, the offset is wrong, as
+#  Chromecast thinks it's starting from 0 but ffmpeg starts from offset,
+#  to fix it need to use mc.seek() instead of ffmpeg -ss.
 
 
 import argparse
