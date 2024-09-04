@@ -338,6 +338,9 @@ def urlencode(filename):
 def prettyname(filename):
     """ Encode a filename so it looks pretty when used in HTML page.
     Currently just puts spaces around the slashes """
+    filename = re.sub('_[0-9a-z]{8}_original', '', filename)
+    filename = re.sub('(h264|H264|x264|X264|720p|1080p|DivX|XviD|WEB|DVDRip|_original)', '', filename)
+    filename = re.sub('(_|\.)', ' ', filename)
     return filename.replace('/', ' / ')
 
 @app.route("/")
