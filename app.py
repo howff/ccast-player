@@ -338,13 +338,40 @@ def prettyname(filename):
 
 @app.route("/")
 def home():
+    """ Can take a parameter &sort=N where N is
+    mtime, atime, wtime
+    for file modified, file accessed, last watched time
+    default is sort by filename.
+    """
+
+    req_sort = request.args.get('sort', 'name')
 
     # Collect a list of movie files underneath the media directory
     files = []
     ext_regex = '.*\.(' + '|'.join(video_file_ext) + ')$'
     for root, dirslist, fileslist in os.walk(movie_dir, followlinks = True):
-        files += [os.path.join(root, f) for f in fileslist if re.match(ext_regex, f)]
-    files = natsorted(files)
+        for filename in fileslist:
+            if re.match(ext_regex, filename):
+                fullpath = os.path.join(root, filename)
+                dbpath = urlencode(fullpath.replace(movie_dir+'/', ''))
+                files += [{
+                    'filename': fullpath,
+                    'last_modified': os.path.getmtime(fullpath),
+                    'last_accessed': os.path.getatime(fullpath),
+                    'last_watched' : db_get_last_modified(dbpath),
+                }]
+    for f in files:
+        if f['last_watched'] > datetime.datetime(2010,1,1):
+            app_logger.info(f)
+    if 'mtime' in req_sort:
+        files = [x['filename'] for x in sorted(files, key=lambda x : x['last_modified'], reverse=True)]
+    elif 'atime' in req_sort:
+        files = [x['filename'] for x in sorted(files, key=lambda x : x['last_accessed'], reverse=True)]
+    elif 'wtime' in req_sort:
+        files = [x['filename'] for x in sorted(files, key=lambda x : x['last_watched'], reverse=True)]
+    else:
+        files = natsorted([x['filename'] for x in files])
+
 
     # Create HTML document listing movie files with option to Restart from beginning
     html = '<html><head><title>CCast-Player</title></head><body>\n'
