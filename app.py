@@ -154,7 +154,7 @@ class SeekDB:
         self.db.define_table('SeekPos', Field('file', unique=True), Field('seek'), Field('last_modified', type='datetime'))
     def get_seekpos(self, filename):
         for row in db(db.SeekPos.file == filename).select(db.SeekPos.seek):
-            app_logger.debug('Got seek position %s for %s' % (row, filename))
+            #app_logger.debug('Got seek position %s for %s' % (row, filename))
             return row['seek']
         return None
     def update_seekpos(self, filename, seconds):
@@ -163,7 +163,7 @@ class SeekDB:
         app_logger.debug('Set seek position %s for %s' % (seekpos, filename))
     def get_last_modified(self, filename):
         for row in db(db.SeekPos.file == filename).select(db.SeekPos.last_modified):
-            app_logger.debug('Got last modified %s for %s' % (row, filename))
+            #app_logger.debug('Got last modified %s for %s' % (row, filename))
             return row['last_modified']
         return 0
     def dump(self):
@@ -189,7 +189,7 @@ def db_get_seekpos(filename):
 
     db = db_init()
     for row in db(db.SeekPos.file == filename).select(db.SeekPos.seek):
-        app_logger.debug('Got seek position %s for %s' % (row, filename))
+        #app_logger.debug('Got seek position %s for %s' % (row, filename))
         return row['seek']
     return None
 
@@ -211,7 +211,7 @@ def db_get_last_modified(filename):
     db = db_init()
     null_date = datetime.datetime(2000,1,1)
     for row in db(db.SeekPos.file == filename).select(db.SeekPos.last_modified):
-        app_logger.debug('Got last modified %s for %s' % (row, filename))
+        #app_logger.debug('Got last modified %s for %s' % (row, filename))
         return row['last_modified'] if row['last_modified'] else null_date
     return null_date
 
