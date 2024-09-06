@@ -27,6 +27,7 @@ import re
 import subprocess
 import sys
 from natsort import natsorted
+from natsort import natsort_keygen
 from pydal import DAL, Field
 import pprint
 import signal
@@ -374,7 +375,7 @@ def home():
     elif 'wtime' in req_sort:
         files = [x for x in sorted(files, key=lambda x : x['last_watched'], reverse=True)]
     else:
-        files = natsorted(files)
+        files = [x for x in sorted(files, key=natsort_keygen(key = lambda x : x['filename']), reverse=False)]
 
 
     # Create HTML document listing movie files with option to Restart from beginning
