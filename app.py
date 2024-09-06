@@ -411,11 +411,11 @@ def home():
         html += '<br>%s ' % prettyname(filename)
         if file_info['last_watched'] > null_date:
             html += '<a class="file" href="' + play_url + '">[Resume]</a>\n'
+            html += '  <a class="resume" href="' + play_url + '&resume=0">[Restart]</a>\n'
         else:
             html += '<a class="file" href="' + play_url + '">[Watch]</a>\n'
         if os.path.isfile(subtitle_file):
             html += '  <a class="file"   href="' + play_url + '&subtitles=1">[Subtitles]</a>\n'
-        html += '  <a class="resume" href="' + play_url + '&resume=0">[Restart]</a>\n'
         html += '  <a class="download" href="' + download_url + '">[Download]</a>\n'
     html += '</body></html>'
     return Response(html)
