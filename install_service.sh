@@ -22,19 +22,26 @@ if [ ! -d "$currentdir/venv" ]; then
 fi
 
 
-echo "Remove old version of ${name}.service"
-sudo systemctl stop ${name}.service
-sudo systemctl disable ${name}.service
-sudo rm -f /etc/systemd/system/${name}.service
-sudo systemctl daemon-reload
-sudo systemctl reset-failed
+if [ -f /etc/systemd/system/${name}.service ]; then
+	echo "Remove old version of ${name}.service"
+	sudo systemctl stop ${name}.service
+	sudo systemctl disable ${name}.service
+	sudo rm -f /etc/systemd/system/${name}.service
+	sudo systemctl daemon-reload
+	sudo systemctl reset-failed
+fi
+
+echo "Modify log config with current path"
+sed \
+	-e "s,LOGDIR,$currentdir," \
+	${name}.logtemplate > ${name}.logconf
 
 echo "Modify service unit file with current path"
 sed -i \
-	-e "s,ExecStart=.*/gunicorn,ExecStart=$currentdir/venv/bin/gunicorn," \
-	-e "s,--chdir [^ ]*,--chdir $currentdir," \
-	-e "s,--user [^ ]*,--user $currentuser," \
-	-e "s,--log-config [^ ]*,--log-config $currentdir/$name.logconf," \
+	-e "s,ExecStart=.*/gunicorn,ExecStart=${currentdir}/venv/bin/gunicorn," \
+	-e "s,--chdir [^ ]*,--chdir ${currentdir}," \
+	-e "s,--user [^ ]*,--user ${currentuser}," \
+	-e "s,--log-config [^ ]*,--log-config ${currentdir}/${name}.logconf," \
 	${name}.service
 
 echo "Copy unit file to /etc"
