@@ -1,9 +1,15 @@
+# Define the logger names which you can use with logging.getLogger()
+# See logger_root, logger_app, logger_gunicorn.error, logger_gunicorn.access below.
 [loggers]
 keys=root, app, gunicorn.error, gunicorn.access
 
+# Each logger can write to any/all of these destinations.
+# See handler_console, handler_app_file, handler_error_file, handler_access_file below.
 [handlers]
 keys=console, app_file, error_file, access_file
 
+# Each logger can use one of these file formats.
+# See formatter_generic, formatter_access below.
 [formatters]
 keys=generic, access
 
@@ -29,6 +35,7 @@ handlers=access_file
 propagate=0
 qualname=gunicorn.access
 
+# The console handler just writes to stdout (NB not stderr)
 [handler_console]
 class=StreamHandler
 formatter=generic
@@ -37,20 +44,17 @@ args=(sys.stdout, )
 [handler_app_file]
 class=logging.handlers.RotatingFileHandler
 formatter=generic
-args=('/var/log/ccastplayer/ccastplayer.app.log', 'a', 32*1024*1024, 99, 'utf-8')
-#args=('ccastplayer.app.log', 'a', 32*1024*1024, 99, 'utf-8')
+args=('/home/arb/src/cast/ccast-player/ccastplayer.app.log', 'a', 32*1024*1024, 99, 'utf-8')
 
 [handler_error_file]
 class=logging.handlers.RotatingFileHandler
 formatter=generic
-args=('/var/log/ccastplayer/ccastplayer.error.log', 'a', 1*1024*1024, 99, 'utf-8')
-#args=('ccastplayer.error.log', 'a', 1*1024*1024, 99, 'utf-8')
+args=('/home/arb/src/cast/ccast-player/ccastplayer.error.log', 'a', 1*1024*1024, 99, 'utf-8')
 
 [handler_access_file]
 class=logging.handlers.RotatingFileHandler
 formatter=access
-args=('/var/log/ccastplayer/ccastplayer.access.log', 'a', 1*1024*1024, 99, 'utf-8')
-#args=('ccastplayer.access.log', 'a', 1*1024*1024, 99, 'utf-8')
+args=('/home/arb/src/cast/ccast-player/ccastplayer.access.log', 'a', 1*1024*1024, 99, 'utf-8')
 
 [formatter_generic]
 format=%(asctime)s [%(process)d] [%(levelname)s] %(message)s
